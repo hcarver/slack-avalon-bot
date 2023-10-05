@@ -53,7 +53,8 @@ module.exports = class SlackApiRx {
   // Returns an {Observable} that signals completion, or an error if the API
   // call fails
   static openDm(slack, api, user) {
-    api.dm.open(user.id);
+    api.conversations.open({users: [user.id]})
+
     return rx.Observable.fromEvent(slack, Slack.RTM_EVENTS.IM_OPEN)
       .where(e => e.user == user.id)
       .take(1)
