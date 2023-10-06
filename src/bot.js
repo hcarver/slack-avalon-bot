@@ -405,7 +405,7 @@ class Bot {
     const allChannels = myConvos.channels;
 
     let channels_and_groups = allChannels.filter(
-      ((c) => c.is_channel || c.is_group) && !c.is_archived,
+      (c) => (c.is_channel || c.is_group) && !c.is_archived,
     );
 
     return channels_and_groups;
