@@ -32,46 +32,46 @@ class Avalon {
 
   static QUEST_ASSIGNMENTS = [
     [
-      { n: 2, f: 1 },
-      { n: 3, f: 1 },
-      { n: 2, f: 1 },
-      { n: 3, f: 1 },
-      { n: 3, f: 1 },
+      { players: 2, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 2, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 3, fails: 1 },
     ],
     [
-      { n: 2, f: 1 },
-      { n: 3, f: 1 },
-      { n: 3, f: 1 },
-      { n: 3, f: 1 },
-      { n: 4, f: 1 },
+      { players: 2, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 4, fails: 1 },
     ],
     [
-      { n: 2, f: 1 },
-      { n: 3, f: 1 },
-      { n: 3, f: 1 },
-      { n: 4, f: 2 },
-      { n: 4, f: 1 },
+      { players: 2, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 3, fails: 1 },
+      { players: 4, fails: 2 },
+      { players: 4, fails: 1 },
     ],
     [
-      { n: 3, f: 1 },
-      { n: 4, f: 1 },
-      { n: 4, f: 1 },
-      { n: 5, f: 2 },
-      { n: 5, f: 1 },
+      { players: 3, fails: 1 },
+      { players: 4, fails: 1 },
+      { players: 4, fails: 1 },
+      { players: 5, fails: 2 },
+      { players: 5, fails: 1 },
     ],
     [
-      { n: 3, f: 1 },
-      { n: 4, f: 1 },
-      { n: 4, f: 1 },
-      { n: 5, f: 2 },
-      { n: 5, f: 1 },
+      { players: 3, fails: 1 },
+      { players: 4, fails: 1 },
+      { players: 4, fails: 1 },
+      { players: 5, fails: 2 },
+      { players: 5, fails: 1 },
     ],
     [
-      { n: 3, f: 1 },
-      { n: 4, f: 1 },
-      { n: 4, f: 1 },
-      { n: 5, f: 2 },
-      { n: 5, f: 1 },
+      { players: 3, fails: 1 },
+      { players: 4, fails: 1 },
+      { players: 4, fails: 1 },
+      { players: 5, fails: 2 },
+      { players: 5, fails: 1 },
     ],
   ];
 
@@ -322,10 +322,10 @@ class Avalon {
       return rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
         let questAssignment = this.questAssignment();
         let f = "";
-        if (questAssignment.f > 1) {
+        if (questAssignment.fails > 1) {
           f = "(2 fails required) ";
         }
-        let message = ` ${questAssignment.n} players ${f}to go on the ${
+        let message = ` ${questAssignment.players} players ${f}to go on the ${
           Avalon.ORDER[this.questNumber]
         } quest.`;
         let status = `Quest progress: ${this.getStatus(true)}\n`;
@@ -400,7 +400,7 @@ class Avalon {
       .where((text) => text && text.match(/^send /i))
       .map((text) => text.split(/[,\s]+/).slice(1))
       .map((chosen) => {
-        if (chosen.length != questAssignment.n) {
+        if (chosen.length != questAssignment.players) {
           return [];
         }
         let questPlayers = [];
@@ -414,13 +414,13 @@ class Avalon {
         return questPlayers;
       })
       .where((questPlayers) => {
-        if (questPlayers.length != questAssignment.n) {
+        if (questPlayers.length != questAssignment.players) {
           this.broadcast(
-            `You need to send ${questAssignment.n} players. (You only chosen ${questPlayers.length} valid players)`,
+            `You need to send ${questAssignment.players} players. (You only chosen ${questPlayers.length} valid players)`,
             "#a60",
           );
         }
-        return questPlayers.length == questAssignment.n;
+        return questPlayers.length == questAssignment.players;
       })
       .concatMap((questPlayers) => {
         this.questPlayers = questPlayers;
@@ -478,7 +478,9 @@ class Avalon {
       let questAssignment =
         Avalon.QUEST_ASSIGNMENTS[this.players.length - Avalon.MIN_PLAYERS][i];
       let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
-      return `${questAssignment.n}${questAssignment.f > 1 ? "*" : ""}${circle}`;
+      return `${questAssignment.players}${
+        questAssignment.fails > 1 ? "*" : ""
+      }${circle}`;
     });
     if (current) {
       let questAssignment =
@@ -486,7 +488,9 @@ class Avalon {
           this.questNumber
         ];
       status.push(
-        `${questAssignment.n}${questAssignment.f > 1 ? "*" : ""}:black_circle:`,
+        `${questAssignment.players}${
+          questAssignment.fails > 1 ? "*" : ""
+        }:black_circle:`,
       );
     }
     if (status.length < Avalon.ORDER.length) {
@@ -496,8 +500,8 @@ class Avalon {
             Avalon.QUEST_ASSIGNMENTS[this.players.length - Avalon.MIN_PLAYERS][
               i + status.length
             ];
-          return `${questAssignment.n}${
-            questAssignment.f > 1 ? "*" : ""
+          return `${questAssignment.players}${
+            questAssignment.fails > 1 ? "*" : ""
           }:white_circle:`;
         }),
       );
@@ -566,7 +570,7 @@ class Avalon {
         }
         let questAssignment = this.questAssignment();
         if (questResults.failed.length > 0) {
-          if (questResults.failed.length < questAssignment.f) {
+          if (questResults.failed.length < questAssignment.fails) {
             this.progress.push("good");
             this.broadcast(
               `${M.pp(questPlayers)} succeeded the ${
