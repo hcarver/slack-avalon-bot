@@ -16,7 +16,8 @@ class Bot {
       logLevel: process.env.LOG_LEVEL || 'error',
       dataStore: new Slack.MemoryDataStore(),
       autoReconnect: true,
-      autoMark: true
+      autoMark: true,
+      useRtmConnect: true
     });
     this.api = new Slack.WebClient(token);
 
@@ -46,7 +47,7 @@ class Bot {
     let messages = rx.Observable.fromEvent(this.slack, Slack.RTM_EVENTS.MESSAGE);
 
     rx.Observable.fromEvent(this.slack, Slack.RTM_EVENTS.CHANNEL_JOINED).subscribe(e => {
-      this.slack.sendMessage(e.channel, this.welcomeMessage());
+      this.slack.sendMessage(this.welcomeMessage(), e.channel.id);
     });
 
     let atMentions = messages.where(e => e.text && e.text.toLowerCase().match(this.selfname));
@@ -165,7 +166,7 @@ class Bot {
     if (this.gameConfig.resistance) {
       this.slack.sendMessage('Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png', channel.id);
     } else {
-      this.slack.sendMessage('Who wants to play Avalon? https://cf.geekdo-images.com/images/pic1398895_md.jpg', channel.id);
+      this.slack.sendMessage('Who wants to play Avalon?', channel.id);
     }
 
     // let formatMessage = t => [
