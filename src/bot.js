@@ -404,11 +404,9 @@ class Bot {
     const conversations = await this.api.users.conversations();
     const allChannels = conversations.channels;
 
-    let channels_and_groups = allChannels.filter(
+    return allChannels.filter(
       (c) => (c.is_channel || c.is_group) && !c.is_archived,
     );
-
-    return channels_and_groups;
   }
 
   // Private: Save which channels and groups this bot is in and log them.
