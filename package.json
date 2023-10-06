@@ -11,20 +11,20 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "chai": "^3.5.0",
-    "gulp": "^3.9.1",
-    "gulp-mocha": "^2.2.0",
-    "mocha": "^2.4.5",
+    "chai": "^4.3.10",
+    "gulp": "^4.0.2",
+    "gulp-mocha": "^8.0.0",
+    "mocha": "^10.2.0",
     "prettier": "^3.0.3"
   },
   "dependencies": {
     "@slack/client": "^3",
-    "body-parser": "1.15.0",
-    "express": "^4.x",
-    "lodash": "^4.0.1",
-    "pug": "2.0.0-alpha7",
-    "rx": "^4.0.7",
-    "string_score": "^v0.1"
+    "body-parser": "1.20.2",
+    "express": "^4.18.2",
+    "lodash": "^4.17.21",
+    "pug": "3.0.2",
+    "rx": "^4.1.0",
+    "string_score": "^0.1.22"
   },
   "eslintConfig": {
     "env": {
