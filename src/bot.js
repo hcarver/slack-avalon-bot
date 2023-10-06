@@ -444,13 +444,14 @@ class Bot {
     return this._loggedOn;
   }
 
-  getPotentialPlayers() {
+  async getPotentialPlayers() {
     if (!this.isLoggedOn()) {
       return [];
     }
-    return _.filter(
-      this.slack.dataStore.users,
-      (user) => !user.is_bot && user.name != "slackbot" && !user.deleted,
+
+    const users = await this.api.users.list();
+    return users.members.filter(
+      (user) => !user.is_bot && user.name !== "slackbot" && !user.deleted,
     );
   }
 }
