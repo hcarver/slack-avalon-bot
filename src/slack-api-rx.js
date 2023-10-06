@@ -1,6 +1,6 @@
-'use strict';
-const rx = require('rx');
-const Slack = require('@slack/client');
+"use strict";
+const rx = require("rx");
+const Slack = require("@slack/client");
 
 module.exports = class SlackApiRx {
   // Public: Retrieves DM channels for all of the given users, opening any that
@@ -39,13 +39,16 @@ module.exports = class SlackApiRx {
 
     // Bot players don't need DM channels; we only talk to humans
     if ((dm && dm.is_open) || user.isBot) {
-      return rx.Observable.return({id: user.id, dm: dm});
+      return rx.Observable.return({ id: user.id, dm: dm });
     }
 
-    console.log(`No open channel found for ${user.name}, opening one using ${user.id}`);
+    console.log(
+      `No open channel found for ${user.name}, opening one using ${user.id}`,
+    );
 
-    return SlackApiRx.openDm(slack, api, user)
-      .catch(rx.Observable.return({id: user.id, dm: null}));
+    return SlackApiRx.openDm(slack, api, user).catch(
+      rx.Observable.return({ id: user.id, dm: null }),
+    );
   }
 
   // Private: Maps the `im.open` API call into an {Observable}.
@@ -53,11 +56,13 @@ module.exports = class SlackApiRx {
   // Returns an {Observable} that signals completion, or an error if the API
   // call fails
   static openDm(slack, api, user) {
-    api.conversations.open({users: [user.id]})
+    api.conversations.open({ users: [user.id] });
 
     return rx.Observable.fromEvent(slack, Slack.RTM_EVENTS.IM_OPEN)
-      .where(e => e.user == user.id)
+      .where((e) => e.user == user.id)
       .take(1)
-      .map(e => { return { id: e.user, dm: slack.dataStore.getDMByName(user.name) } });
+      .map((e) => {
+        return { id: e.user, dm: slack.dataStore.getDMByName(user.name) };
+      });
   }
 };

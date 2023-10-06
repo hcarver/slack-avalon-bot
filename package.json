@@ -14,22 +14,24 @@
     "chai": "^3.5.0",
     "gulp": "^3.9.1",
     "gulp-mocha": "^2.2.0",
-    "mocha": "^2.4.5"
+    "mocha": "^2.4.5",
+    "prettier": "^3.0.3"
   },
   "dependencies": {
-    "rx": "^4.0.7",
     "@slack/client": "^3",
-    "lodash": "^4.0.1",
-    "string_score": "^v0.1",
+    "body-parser": "1.15.0",
     "express": "^4.x",
+    "lodash": "^4.0.1",
     "pug": "2.0.0-alpha7",
-    "body-parser": "1.15.0"
+    "rx": "^4.0.7",
+    "string_score": "^v0.1"
   },
   "eslintConfig": {
     "env": {
       "es6": true
     }
   },
+  "prettier": {},
   "overrides": {
     "graceful-fs": "^4.2.11"
   }
