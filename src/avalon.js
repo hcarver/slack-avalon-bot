@@ -107,8 +107,7 @@ class Avalon {
     return assignments;
   }
 
-  constructor(slack, api, messages, channel, players, scheduler) {
-    scheduler = scheduler || rx.Scheduler.timeout;
+  constructor(slack, api, messages, channel, players, scheduler = rx.Scheduler.timeout) {
     this.slack = slack;
     this.api = api;
     this.messages = messages;
@@ -120,8 +119,7 @@ class Avalon {
     _.extend(this, Avalon.DEFAULT_CONFIG);
   }
 
-  start(playerDms, timeBetweenRounds) {
-    timeBetweenRounds = timeBetweenRounds || 1000;
+  start(playerDms, timeBetweenRounds = 1000) {
     this.isRunning = true;
     this.questNumber = 0;
     this.rejectCount = 0;
@@ -217,8 +215,7 @@ class Avalon {
     );
   }
 
-  revealRoles(excludeMerlin) {
-    excludeMerlin = excludeMerlin || false;
+  revealRoles(excludeMerlin = false) {
     let lines = [`${M.pp(this.evils)} are :red_circle: Minions of Mordred.`];
     let reveals = {};
     for (let player of this.players) {
@@ -248,8 +245,7 @@ class Avalon {
       .join("\n");
   }
 
-  endGame(message, color, current) {
-    current = current || false;
+  endGame(message, color, current = false) {
     let status = `Quest Results: ${this.getStatus(current)}`;
     message += `\n${status}\n${this.revealRoles()}`;
     this.broadcast(message, color, "end");
@@ -316,8 +312,7 @@ class Avalon {
     ];
   }
 
-  deferredActionForPlayer(player, timeToPause) {
-    timeToPause = timeToPause || 3000;
+  deferredActionForPlayer(player, timeToPause = 3000) {
     return rx.Observable.defer(() => {
       return rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
         let questAssignment = this.questAssignment();
@@ -472,8 +467,7 @@ class Avalon {
       );
   }
 
-  getStatus(current) {
-    current = current || false;
+  getStatus(current = false) {
     let status = this.progress.map((res, i) => {
       let questAssignment =
         Avalon.QUEST_ASSIGNMENTS[this.players.length - Avalon.MIN_PLAYERS][i];
