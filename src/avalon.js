@@ -28,26 +28,6 @@ class Avalon {
     merlin: ":angel: MERLIN :large_blue_circle: Loyal Servent of Arthur",
   };
 
-  static ROLE_ASSIGNS = [
-    ["bad", "bad", "good", "good", "good"],
-    ["bad", "bad", "good", "good", "good", "good"],
-    ["bad", "bad", "bad", "good", "good", "good", "good"],
-    ["bad", "bad", "bad", "good", "good", "good", "good", "good"],
-    ["bad", "bad", "bad", "good", "good", "good", "good", "good", "good"],
-    [
-      "bad",
-      "bad",
-      "bad",
-      "bad",
-      "good",
-      "good",
-      "good",
-      "good",
-      "good",
-      "good",
-    ],
-  ];
-
   static ORDER = ["first", "second", "third", "fourth", "last"];
 
   static QUEST_ASSIGNS = [
@@ -95,9 +75,17 @@ class Avalon {
     ],
   ];
 
-  static getAssigns(numPlayers, specialRoles, resistance) {
-    resistance = resistance || false;
-    let assigns = Avalon.ROLE_ASSIGNS[numPlayers - Avalon.MIN_PLAYERS].slice(0);
+  static getAssigns(numberOfPlayers, specialRoles, resistance = false) {
+    const numberOfGoodies = { 5: 3, 6: 4, 7: 4, 8: 5, 9: 6, 10: 6 }[
+      numberOfPlayers
+    ];
+    const numberOfBaddies = numberOfPlayers - numberOfGoodies;
+
+    const assigns = [
+      ...Array(numberOfGoodies).fill("good"),
+      ...Array(numberOfBaddies).fill("bad"),
+    ];
+
     if (!resistance) {
       specialRoles.forEach((role) => {
         switch (role) {
@@ -109,11 +97,13 @@ class Avalon {
             assigns[assigns.indexOf("bad")] = role;
         }
       });
-      let badIndex = assigns.indexOf("bad");
+
+      const badIndex = assigns.indexOf("bad");
       if (badIndex >= 0) {
         assigns[badIndex] = "assassin";
       }
     }
+
     return assigns;
   }
 
