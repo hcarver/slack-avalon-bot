@@ -23,26 +23,30 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static("public"));
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
   if (!bot.isLoggedOn()) {
     res.render("error", {
       error: "Avalon Bot is initializing. Reload in a bit...",
     });
     return;
-  } else if (bot.getChannels().length == 0) {
+  }
+
+  const channels = await bot.getChannels();
+  const users = await bot.getPotentialPlayers();
+
+  if (channels.length === 0) {
     res.render("error", { error: "Avalon Bot is in no valid slack channel" });
     return;
   }
-  let users = bot.getPotentialPlayers();
-  let channels = bot.getChannels();
+
   res.render("index", { users: users, channels: channels });
 });
 
-app.post("/start", (req, res) => {
+app.post("/start", async (req, res) => {
+  const channels = await bot.getChannels();
+
   if (req.body.players instanceof Array && res.body.channel) {
-    if (
-      bot.getChannels().filter((c) => c.name == res.body.channel).length == 0
-    ) {
+    if (channels.filter((c) => c.name == res.body.channel).length === 0) {
       return res.end("failure");
     }
     bot.gameConfig.specialRoles =
