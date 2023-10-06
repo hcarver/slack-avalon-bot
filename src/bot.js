@@ -1,7 +1,6 @@
 "use strict";
 const rx = require("rx");
 const _ = require("lodash");
-
 const Slack = require("@slack/client");
 const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");

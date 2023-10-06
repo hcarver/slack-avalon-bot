@@ -2,7 +2,7 @@
 const rx = require("rx");
 const Slack = require("@slack/client");
 
-module.exports = class SlackApiRx {
+class SlackApiRx {
   // Public: Retrieves DM channels for all of the given users, opening any that
   // do not already exist.
   //
@@ -66,3 +66,5 @@ module.exports = class SlackApiRx {
       });
   }
 };
+
+module.exports = SlackApiRx;

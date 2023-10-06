@@ -1,5 +1,9 @@
 "use strict";
 const fs = require("fs");
+const express = require("express");
+const bodyParser = require("body-parser");
+const Bot = require("./bot");
+
 const pathToken = process.env.SLACK_AVALON_BOT_TOKEN;
 let token;
 try {
@@ -9,11 +13,8 @@ try {
   return;
 }
 
-const express = require("express");
 const app = express();
-const bodyParser = require("body-parser");
 
-const Bot = require("./bot");
 const bot = new Bot(token);
 bot.login();
 
