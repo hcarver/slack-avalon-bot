@@ -129,8 +129,8 @@ class Avalon {
     this.playerDms = playerDms;
     this.date = new Date();
 
-    let players = (this.players = this.playerOrder(this.players));
-    let assigns = this.getRoleAssigns(
+    let players = (this.players = _.shuffle(this.players));
+    let assigns = _.shuffle(
       Avalon.getAssigns(players.length, this.specialRoles, this.resistance),
     );
     this.leader = players[0];
@@ -191,14 +191,6 @@ class Avalon {
       .subscribe();
 
     return this.gameEnded;
-  }
-
-  getRoleAssigns(roles) {
-    return _.shuffle(roles);
-  }
-
-  playerOrder(players) {
-    return _.shuffle(players);
   }
 
   getAssassin() {
