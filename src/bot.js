@@ -30,6 +30,7 @@ class Bot {
     this.slack
       .on(Slack.CLIENT_EVENTS.RTM.AUTHENTICATED, (auth) => {
         this.selfname = auth.self.name;
+        this.self_id = auth.self.id;
         console.log(
           `Welcome to Slack. You are ${auth.self.name} of ${auth.team.name}`,
         );
@@ -153,7 +154,7 @@ class Bot {
   handleAtMessages(atMentions, command, handler) {
     command = command.toLowerCase();
     return atMentions
-      .where((e) => e.user != this.slack.self.id)
+      .where((e) => e.user != this.self_id)
       .where(
         (e) => e.text && e.text.toLowerCase().match(`[^\\s]+\\s+${command}`),
       )
@@ -185,11 +186,11 @@ class Bot {
         return rx.Observable.timer(0, 1000, scheduler)
           .take(timeout + 1)
           .do((x) => {
-            this.api.chat.update(
-              payload[1].ts,
-              channel.id,
-              formatMessage(`${timeout - x}`),
-            );
+            this.api.chat.update({
+              ts: payload[1].ts,
+              channel: channel.id,
+              text: formatMessage(`${timeout - x}`),
+            });
           });
       })
       .publishLast();
