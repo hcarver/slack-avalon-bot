@@ -9,8 +9,6 @@ rx.config.longStackSupport = true;
 class Avalon {
   static MIN_PLAYERS = 5;
 
-  static MAX_PLAYERS = 10;
-
   static DEFAULT_CONFIG = {
     resistance: false,
     lady: false,
