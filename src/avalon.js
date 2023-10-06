@@ -6,94 +6,100 @@ require("string_score");
 
 rx.config.longStackSupport = true;
 
-const ROLES = {
-  bad: ":red_circle: Minion of Mordred",
-  good: ":large_blue_circle: Loyal Servent of Arthur",
-  assassin: ":crossed_swords: THE ASSASSIN :red_circle: Minion of Mordred",
-  oberon: ":alien: OBERON :red_circle: Minion of Mordred",
-  morgana:
-    ":japanese_ogre: MORGANA :red_circle: Minion of Mordred. You pose as MERLIN",
-  mordred: ":smiling_imp: MORDRED :red_circle: Unknown to MERLIN",
-  percival: ":cop: PERCIVAL :large_blue_circle: Loyal Servent of Arthur",
-  merlin: ":angel: MERLIN :large_blue_circle: Loyal Servent of Arthur",
-};
-const ROLE_ASSIGNS = [
-  ["bad", "bad", "good", "good", "good"],
-  ["bad", "bad", "good", "good", "good", "good"],
-  ["bad", "bad", "bad", "good", "good", "good", "good"],
-  ["bad", "bad", "bad", "good", "good", "good", "good", "good"],
-  ["bad", "bad", "bad", "good", "good", "good", "good", "good", "good"],
-  ["bad", "bad", "bad", "bad", "good", "good", "good", "good", "good", "good"],
-];
-
-const ORDER = ["first", "second", "third", "fourth", "last"];
-
-const QUEST_ASSIGNS = [
-  [
-    { n: 2, f: 1 },
-    { n: 3, f: 1 },
-    { n: 2, f: 1 },
-    { n: 3, f: 1 },
-    { n: 3, f: 1 },
-  ],
-  [
-    { n: 2, f: 1 },
-    { n: 3, f: 1 },
-    { n: 3, f: 1 },
-    { n: 3, f: 1 },
-    { n: 4, f: 1 },
-  ],
-  [
-    { n: 2, f: 1 },
-    { n: 3, f: 1 },
-    { n: 3, f: 1 },
-    { n: 4, f: 2 },
-    { n: 4, f: 1 },
-  ],
-  [
-    { n: 3, f: 1 },
-    { n: 4, f: 1 },
-    { n: 4, f: 1 },
-    { n: 5, f: 2 },
-    { n: 5, f: 1 },
-  ],
-  [
-    { n: 3, f: 1 },
-    { n: 4, f: 1 },
-    { n: 4, f: 1 },
-    { n: 5, f: 2 },
-    { n: 5, f: 1 },
-  ],
-  [
-    { n: 3, f: 1 },
-    { n: 4, f: 1 },
-    { n: 4, f: 1 },
-    { n: 5, f: 2 },
-    { n: 5, f: 1 },
-  ],
-];
-
 class Avalon {
-  static get MIN_PLAYERS() {
-    return 5;
-  }
+  static MIN_PLAYERS = 5;
 
-  static get MAX_PLAYERS() {
-    return 10;
-  }
+  static MAX_PLAYERS = 10;
 
-  static get DEFAULT_CONFIG() {
-    return {
-      resistance: false,
-      lady: false,
-      order: "turn",
-      specialRoles: ["merlin", "percival", "morgana"],
-    };
-  }
+  static DEFAULT_CONFIG = {
+    resistance: false,
+    lady: false,
+    order: "turn",
+    specialRoles: ["merlin", "percival", "morgana"],
+  };
+
+  static ROLES = {
+    bad: ":red_circle: Minion of Mordred",
+    good: ":large_blue_circle: Loyal Servent of Arthur",
+    assassin: ":crossed_swords: THE ASSASSIN :red_circle: Minion of Mordred",
+    oberon: ":alien: OBERON :red_circle: Minion of Mordred",
+    morgana:
+      ":japanese_ogre: MORGANA :red_circle: Minion of Mordred. You pose as MERLIN",
+    mordred: ":smiling_imp: MORDRED :red_circle: Unknown to MERLIN",
+    percival: ":cop: PERCIVAL :large_blue_circle: Loyal Servent of Arthur",
+    merlin: ":angel: MERLIN :large_blue_circle: Loyal Servent of Arthur",
+  };
+
+  static ROLE_ASSIGNS = [
+    ["bad", "bad", "good", "good", "good"],
+    ["bad", "bad", "good", "good", "good", "good"],
+    ["bad", "bad", "bad", "good", "good", "good", "good"],
+    ["bad", "bad", "bad", "good", "good", "good", "good", "good"],
+    ["bad", "bad", "bad", "good", "good", "good", "good", "good", "good"],
+    [
+      "bad",
+      "bad",
+      "bad",
+      "bad",
+      "good",
+      "good",
+      "good",
+      "good",
+      "good",
+      "good",
+    ],
+  ];
+
+  static ORDER = ["first", "second", "third", "fourth", "last"];
+
+  static QUEST_ASSIGNS = [
+    [
+      { n: 2, f: 1 },
+      { n: 3, f: 1 },
+      { n: 2, f: 1 },
+      { n: 3, f: 1 },
+      { n: 3, f: 1 },
+    ],
+    [
+      { n: 2, f: 1 },
+      { n: 3, f: 1 },
+      { n: 3, f: 1 },
+      { n: 3, f: 1 },
+      { n: 4, f: 1 },
+    ],
+    [
+      { n: 2, f: 1 },
+      { n: 3, f: 1 },
+      { n: 3, f: 1 },
+      { n: 4, f: 2 },
+      { n: 4, f: 1 },
+    ],
+    [
+      { n: 3, f: 1 },
+      { n: 4, f: 1 },
+      { n: 4, f: 1 },
+      { n: 5, f: 2 },
+      { n: 5, f: 1 },
+    ],
+    [
+      { n: 3, f: 1 },
+      { n: 4, f: 1 },
+      { n: 4, f: 1 },
+      { n: 5, f: 2 },
+      { n: 5, f: 1 },
+    ],
+    [
+      { n: 3, f: 1 },
+      { n: 4, f: 1 },
+      { n: 4, f: 1 },
+      { n: 5, f: 2 },
+      { n: 5, f: 1 },
+    ],
+  ];
 
   static getAssigns(numPlayers, specialRoles, resistance) {
     resistance = resistance || false;
-    let assigns = ROLE_ASSIGNS[numPlayers - Avalon.MIN_PLAYERS].slice(0);
+    let assigns = Avalon.ROLE_ASSIGNS[numPlayers - Avalon.MIN_PLAYERS].slice(0);
     if (!resistance) {
       specialRoles.forEach((role) => {
         switch (role) {
@@ -161,7 +167,7 @@ class Avalon {
     for (let player of this.players) {
       let message = `\`\`\`${_.times(60, _.constant("\n")).join(
         "",
-      )}\`\`\` You are ${ROLES[player.role]}`;
+      )}\`\`\` You are ${Avalon.ROLES[player.role]}`;
       if (this.assassin.id == player.id && player.role != "assassin") {
         message += " as well as :crossed_swords: THE ASSASSIN";
       }
@@ -254,7 +260,7 @@ class Avalon {
     }
     return lines
       .concat(
-        Object.keys(ROLES)
+        Object.keys(Avalon.ROLES)
           .filter((role) => !!reveals[role])
           .map((role) => reveals[role])
           .join(" "),
@@ -286,7 +292,7 @@ class Avalon {
       );
       if (specialRoles.length) {
         specialRoles = specialRoles.map((p) => p.role);
-        specialRoles = Object.keys(ROLES)
+        specialRoles = Object.keys(Avalon.ROLES)
           .filter((role) => specialRoles.indexOf(role) >= 0)
           .map((role) => {
             switch (role) {
@@ -325,7 +331,7 @@ class Avalon {
   }
 
   questAssign() {
-    return QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
+    return Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
       this.questNumber
     ];
   }
@@ -340,7 +346,7 @@ class Avalon {
           f = "(2 fails required) ";
         }
         let message = ` ${questAssign.n} players ${f}to go on the ${
-          ORDER[this.questNumber]
+          Avalon.ORDER[this.questNumber]
         } quest.`;
         let status = `Quest progress: ${this.getStatus(true)}\n`;
         let order = this.players.map((p) =>
@@ -367,7 +373,7 @@ class Avalon {
           if (votes.approved.length > votes.rejected.length) {
             this.broadcast(
               `The ${
-                ORDER[this.questNumber]
+                Avalon.ORDER[this.questNumber]
               } quest with ${printQuesters} going was approved by ${M.pp(
                 votes.approved,
               )} (${
@@ -384,7 +390,7 @@ class Avalon {
           this.rejectCount++;
           this.broadcast(
             `The ${
-              ORDER[this.questNumber]
+              Avalon.ORDER[this.questNumber]
             } quest with ${printQuesters} going was rejected (${
               this.rejectCount
             }) by ${M.pp(votes.rejected)} (${
@@ -394,7 +400,7 @@ class Avalon {
           if (this.rejectCount >= 5) {
             this.endGame(
               `:red_circle: Minions of Mordred win due to the ${
-                ORDER[this.questNumber]
+                Avalon.ORDER[this.questNumber]
               } quest rejected 5 times!`,
               "#e00",
               true,
@@ -440,7 +446,7 @@ class Avalon {
         this.questPlayers = questPlayers;
         let message = `${M.formatAtUser(player)} is sending ${M.pp(
           questPlayers,
-        )} to the ${ORDER[this.questNumber]} quest.`;
+        )} to the ${Avalon.ORDER[this.questNumber]} quest.`;
         this.broadcast(`${message}\nVote \`/approve\` or \`/reject\``, "#555");
         for (let player of this.players) {
           player.action = "voting";
@@ -490,24 +496,24 @@ class Avalon {
     current = current || false;
     let status = this.progress.map((res, i) => {
       let questAssign =
-        QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
+        Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
       let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
       return `${questAssign.n}${questAssign.f > 1 ? "*" : ""}${circle}`;
     });
     if (current) {
       let questAssign =
-        QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
+        Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
           this.questNumber
         ];
       status.push(
         `${questAssign.n}${questAssign.f > 1 ? "*" : ""}:black_circle:`,
       );
     }
-    if (status.length < ORDER.length) {
+    if (status.length < Avalon.ORDER.length) {
       status = status.concat(
-        _.times(ORDER.length - status.length, (i) => {
+        _.times(Avalon.ORDER.length - status.length, (i) => {
           let questAssign =
-            QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
+            Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
               i + status.length
             ];
           return `${questAssign.n}${
@@ -521,7 +527,7 @@ class Avalon {
 
   runQuest(questPlayers, leader) {
     let message = `${M.pp(questPlayers)} are going on the ${
-      ORDER[this.questNumber]
+      Avalon.ORDER[this.questNumber]
     } quest.`;
     message += `\nCurrent quest progress: ${this.getStatus(true)}`;
     let order = this.players.map((p) =>
@@ -584,7 +590,7 @@ class Avalon {
             this.progress.push("good");
             this.broadcast(
               `${M.pp(questPlayers)} succeeded the ${
-                ORDER[this.questNumber]
+                Avalon.ORDER[this.questNumber]
               } quest with ${questResults.failed.length} fail!`,
               "#08e",
             );
@@ -593,7 +599,7 @@ class Avalon {
             this.broadcast(
               `${questResults.failed.length} in (${M.pp(
                 questPlayers,
-              )}) failed the ${ORDER[this.questNumber]} quest!`,
+              )}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
               "#e00",
             );
           }
@@ -601,7 +607,7 @@ class Avalon {
           this.progress.push("good");
           this.broadcast(
             `${M.pp(questPlayers)} succeeded the ${
-              ORDER[this.questNumber]
+              Avalon.ORDER[this.questNumber]
             } quest!`,
             "#08e",
           );
