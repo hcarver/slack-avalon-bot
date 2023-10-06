@@ -3,6 +3,7 @@ const rx = require("rx");
 const _ = require("lodash");
 const Slack = require("@slack/client");
 const SlackApiRx = require("./slack-api-rx");
+const { WebClient } = require('@slack/web-api');
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
@@ -18,7 +19,7 @@ class Bot {
       autoMark: true,
       useRtmConnect: true,
     });
-    this.api = new Slack.WebClient(token);
+    this.api = new WebClient(token);
 
     this.gameConfig = Avalon.DEFAULT_CONFIG;
     this.gameConfigParams = ["timeout", "mode"];
@@ -399,31 +400,23 @@ class Bot {
     return `Hi! I can host Avalon games. Type \`play avalon\` to play.`;
   }
 
-  getChannels() {
-    let store = this.slack.dataStore;
-    let channels = _.keys(store.channels)
-      .map((k) => store.channels[k])
-      .filter((c) => c.is_member);
-    let groups = _.keys(store.groups)
-      .map((k) => store.groups[k])
-      .filter((g) => g.is_open && !g.is_archived);
-    return channels.concat(groups);
+  async getChannels() {
+    const myConvos = await this.api.users.conversations()
+    const allChannels = myConvos.channels
+
+    let channels_and_groups = allChannels.filter((c => c.is_channel || c.is_group) && !c.is_archived)
+
+    return channels_and_groups
   }
 
   // Private: Save which channels and groups this bot is in and log them.
-  onClientOpened() {
-    let store = this.slack.dataStore;
-    let channels = _.keys(store.channels)
-      .map((k) => store.channels[k])
-      .filter((c) => c.is_member);
+  async onClientOpened() {
+    const myConvos = await this.api.users.conversations()
+    const allChannels = myConvos.channels
 
-    let groups = _.keys(store.groups)
-      .map((k) => store.groups[k])
-      .filter((g) => g.is_open && !g.is_archived);
-
-    let dms = _.keys(store.dms)
-      .map((k) => store.dms[k])
-      .filter((dm) => dm.is_open);
+    let channels = allChannels.filter(c => c.is_channel)
+    let groups = allChannels.filter(c => c.is_group && !c.is_archived)
+    let dms = allChannels.filter(c => c.is_im)
 
     if (channels.length > 0) {
       console.log(`You are in: ${channels.map((c) => c.name).join(", ")}`);
@@ -436,11 +429,11 @@ class Bot {
     }
 
     if (dms.length > 0) {
+      // TODO, this will break at the moment
       console.log(
         `Your open DM's: ${dms
-          .map((dm) => store.getUserById(dm.user).name)
-          .join(", ")}`,
-      );
+          .map(dm => store.getUserById(dm.user).name)
+          .join(', ')}`);
     }
 
     this._loggedOn = true;
