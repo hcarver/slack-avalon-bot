@@ -3,7 +3,7 @@ const rx = require("rx");
 const _ = require("lodash");
 const Slack = require("@slack/client");
 const SlackApiRx = require("./slack-api-rx");
-const { WebClient } = require('@slack/web-api');
+const { WebClient } = require("@slack/web-api");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
@@ -401,22 +401,24 @@ class Bot {
   }
 
   async getChannels() {
-    const myConvos = await this.api.users.conversations()
-    const allChannels = myConvos.channels
+    const myConvos = await this.api.users.conversations();
+    const allChannels = myConvos.channels;
 
-    let channels_and_groups = allChannels.filter((c => c.is_channel || c.is_group) && !c.is_archived)
+    let channels_and_groups = allChannels.filter(
+      ((c) => c.is_channel || c.is_group) && !c.is_archived,
+    );
 
-    return channels_and_groups
+    return channels_and_groups;
   }
 
   // Private: Save which channels and groups this bot is in and log them.
   async onClientOpened() {
-    const myConvos = await this.api.users.conversations()
-    const allChannels = myConvos.channels
+    const myConvos = await this.api.users.conversations();
+    const allChannels = myConvos.channels;
 
-    let channels = allChannels.filter(c => c.is_channel)
-    let groups = allChannels.filter(c => c.is_group && !c.is_archived)
-    let dms = allChannels.filter(c => c.is_im)
+    let channels = allChannels.filter((c) => c.is_channel);
+    let groups = allChannels.filter((c) => c.is_group && !c.is_archived);
+    let dms = allChannels.filter((c) => c.is_im);
 
     if (channels.length > 0) {
       console.log(`You are in: ${channels.map((c) => c.name).join(", ")}`);
@@ -432,8 +434,9 @@ class Bot {
       // TODO, this will break at the moment
       console.log(
         `Your open DM's: ${dms
-          .map(dm => store.getUserById(dm.user).name)
-          .join(', ')}`);
+          .map((dm) => store.getUserById(dm.user).name)
+          .join(", ")}`,
+      );
     }
 
     this._loggedOn = true;
