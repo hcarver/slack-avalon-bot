@@ -401,8 +401,8 @@ class Bot {
   }
 
   async getChannels() {
-    const myConvos = await this.api.users.conversations();
-    const allChannels = myConvos.channels;
+    const conversations = await this.api.users.conversations();
+    const allChannels = conversations.channels;
 
     let channels_and_groups = allChannels.filter(
       (c) => (c.is_channel || c.is_group) && !c.is_archived,
@@ -413,8 +413,8 @@ class Bot {
 
   // Private: Save which channels and groups this bot is in and log them.
   async onClientOpened() {
-    const myConvos = await this.api.users.conversations();
-    const allChannels = myConvos.channels;
+    const conversations = await this.api.users.conversations();
+    const allChannels = conversations.channels;
 
     let channels = allChannels.filter((c) => c.is_channel);
     let groups = allChannels.filter((c) => c.is_group && !c.is_archived);
