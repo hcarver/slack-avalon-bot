@@ -114,7 +114,7 @@ class Bot {
       .map((e) => {
         this.gameConfig.resistance = e.text.match(/resistance/i);
         return {
-          channel: store.channels[e.channel] || store.groups[e.channel],
+          channel: e.channel,
           initiator: e.user,
         };
       })
@@ -125,7 +125,7 @@ class Bot {
         } else if (this.game) {
           this.slack.sendMessage(
             "Another game is in progress, quit that first.",
-            channel.id,
+            starter.channel,
           );
           return false;
         }
@@ -134,7 +134,7 @@ class Bot {
       .flatMap((starter) =>
         this.pollPlayersForGame(
           messages,
-          starter.channel,
+          { id: starter.channel },
           starter.initiator,
           starter.playerNames,
         ),
@@ -430,10 +430,13 @@ class Bot {
     }
 
     if (dms.length > 0) {
-      // TODO, this will break at the moment
+      const names = await Promise.all(
+        dms.map((dm) => this.api.users.info({ user: dm.user })),
+      );
+
       console.log(
-        `Your open DM's: ${dms
-          .map((dm) => store.getUserById(dm.user).name)
+        `Your open DM's: ${names
+          .map((user_resp) => user_resp.user.name)
           .join(", ")}`,
       );
     }
