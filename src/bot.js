@@ -151,23 +151,6 @@ class Bot {
       .subscribe();
   }
 
-  // atMentions - An {Observable} representing messages directed at the bot
-  //
-  // Returns a {Disposable} that will end this subscription
-  handleAtMessages(atMentions, command, handler) {
-    command = command.toLowerCase();
-    return atMentions
-      .where((e) => e.user != this.self_id)
-      .where(
-        (e) => e.text && e.text.toLowerCase().match(`[^\\s]+\\s+${command}`),
-      )
-      .subscribe((e) => {
-        let channel = this.slack.dataStore.getChannelGroupOrDMById(e.channel);
-        let tokens = e.text.split(/[\s,]+/).slice(2);
-        handler(tokens, channel);
-      });
-  }
-
   // Posts a message to the channel with some timeout, that edits
   // itself each second to provide a countdown.
   //
