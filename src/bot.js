@@ -94,50 +94,53 @@ class Bot {
   //
   // Returns a {Disposable} that will end this subscription
   handleStartGameMessages(messages) {
-    let store = this.slack.dataStore;
-    let trigger = messages.where(
-      (e) =>
-        e.text && e.text.toLowerCase().match(/^play (avalon|resistance)|dta/i),
-    );
+    const trigger = messages
+      .where((e) => e.user !== this.self_id)
+      .concatMap((e) => {
+        return rx.Observable.fromPromise(async () => {
+          const result = await this.api.conversations.info({
+            channel: e.channel,
+          });
+          return { event: e, channel: result.channel };
+        });
+      });
+
     trigger
-      .map((e) => store.dms[e.channel])
-      .where((channel) => !!channel)
-      .do((channel) => {
+      .where(({ channel }) => {
+        return channel.is_im || channel.is_mpim;
+      })
+      .do(({ channel }) => {
         this.slack.sendMessage(
-          "Message to a channel to play avalon/resistance.",
+          "Message `play avalon` to a channel to play avalon in that channel.",
           channel.id,
         );
       })
       .subscribe();
 
     return trigger
-      .map((e) => {
-        this.gameConfig.resistance = e.text.match(/resistance/i);
-        return {
-          channel: e.channel,
-          initiator: e.user,
-        };
+      .where(({ channel }) => {
+        return !channel.is_im && !channel.is_mpim;
       })
-      .where((starter) => !!starter.channel)
-      .where((starter) => {
+      .where(
+        ({ channel, event }) =>
+          event.text &&
+          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i),
+      )
+      .where(({ channel, event }) => {
+        this.gameConfig.resistance = event.text.match(/resistance/i);
         if (this.isPolling) {
           return false;
         } else if (this.game) {
           this.slack.sendMessage(
             "Another game is in progress, quit that first.",
-            starter.channel,
+            channel.id,
           );
           return false;
         }
         return true;
       })
-      .flatMap((starter) =>
-        this.pollPlayersForGame(
-          messages,
-          { id: starter.channel },
-          starter.initiator,
-          starter.playerNames,
-        ),
+      .flatMap(({ channel, event }) =>
+        this.pollPlayersForGame(messages, { id: channel.id }, event.user),
       )
       .flatMap((starter) => {
         this.isPolling = false;
