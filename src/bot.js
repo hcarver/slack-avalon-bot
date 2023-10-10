@@ -32,7 +32,7 @@ class Bot {
         this.selfname = auth.self.name;
         this.self_id = auth.self.id;
         console.log(
-          `Welcome to Slack. You are ${auth.self.name} of ${auth.team.name}`,
+          `Welcome to Slack. You are ${auth.self.name} (${auth.self.id}) of ${auth.team.name}`,
         );
       })
       .on(Slack.CLIENT_EVENTS.RTM.RTM_CONNECTION_OPENED, () =>
