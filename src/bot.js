@@ -318,12 +318,6 @@ class Bot {
   //
   // Returns an {Observable} that signals completion of the game
   startGame(players, messages, channel) {
-    if (!messages) {
-      players = players.map((name) => this.slack.dataStore.getUserByName(name));
-      messages = rx.Observable.fromEvent(this.slack, Slack.RTM_EVENTS.MESSAGE);
-      channel = this.getChannels().filter((c) => c.name == channel)[0];
-    }
-
     if (players.length < Avalon.MIN_PLAYERS) {
       // TODO: send status back to webpage
       this.slack.sendMessage(
