@@ -736,29 +736,23 @@ class Avalon {
                 "#e00",
               );
 
+              const killablePlayers = this.players.filter(
+                (p) => p.id !== assassin.id,
+              );
+
+              const playerChoice = this.gameUx.pollForDecision(
+                this.playerDms[assassin.id],
+                `Choose who to kill`,
+                killablePlayers.map((player) => M.formatAtUser(player)),
+                "kill",
+                (user_id) => user_id === assassin.id,
+                1,
+                1,
+              );
+
               return rx.Observable.return(true).flatMap(() => {
-                return this.messages
-                  .where((e) => e.user == assassin.id)
-                  .map((e) => e.text)
-                  .map((text) => text && text.match(/^kill (.+)/i))
-                  .where((match) => match && match[1])
-                  .map((match) => {
-                    let accused = this.players.filter(
-                      (player) =>
-                        player.name.toLowerCase() ==
-                        match[1].trim().toLowerCase(),
-                    );
-                    if (!accused.length) {
-                      this.broadcast(`${match[1]} is not a valid player`);
-                      return null;
-                    } else if (accused[0].id == assassin.id) {
-                      this.broadcast("You cannot kill yourself");
-                      return null;
-                    }
-                    return accused[0];
-                  })
-                  .where((accused) => !!accused)
-                  .take(1)
+                return playerChoice
+                  .map((idx) => killablePlayers[idx[0]])
                   .do((accused) => {
                     if (accused.role != "merlin") {
                       this.broadcast(
