@@ -125,7 +125,9 @@ class Avalon {
     this.api = api;
     this.messages = messages;
     this.channel = channel;
-    this.players = players;
+    this.players = players.map((id) => {
+      return { id: id };
+    });
     this.spectators = [];
     this.scheduler = scheduler;
     this.gameEnded = new rx.Subject();
@@ -243,19 +245,19 @@ class Avalon {
     let reveals = {};
     for (let player of this.players) {
       if (player.role == "merlin" && !excludeMerlin) {
-        reveals["merlin"] = `${M.formatAtUser(player)} is :angel: MERLIN.`;
+        reveals["merlin"] = `${M.formatAtUser(player.id)} is :angel: MERLIN.`;
       } else if (player.role == "percival") {
-        reveals["percival"] = `${M.formatAtUser(player)} is :cop: PERCIVAL.`;
+        reveals["percival"] = `${M.formatAtUser(player.id)} is :cop: PERCIVAL.`;
       } else if (player.role == "morgana") {
         reveals["morgana"] = `${M.formatAtUser(
-          player,
+          player.id,
         )} is :japanese_ogre: MORGANA.`;
       } else if (player.role == "mordred") {
         reveals["mordred"] = `${M.formatAtUser(
-          player,
+          player.id,
         )} is :smiling_imp: MORDRED.`;
       } else if (player.role == "oberon") {
-        reveals["oberon"] = `${M.formatAtUser(player)} is :alien: OBERON.`;
+        reveals["oberon"] = `${M.formatAtUser(player.id)} is :alien: OBERON.`;
       }
     }
     return lines
@@ -326,7 +328,7 @@ class Avalon {
 
   dmMessages(player) {
     return this.messages.where(
-      (e) => e.channel == this.playerDms[player.id].id,
+      (e) => e.channel == this.playerDms[player.id],
     );
   }
 
@@ -350,7 +352,9 @@ class Avalon {
         } quest.`;
         let status = `Quest progress: ${this.getStatus(true)}\n`;
         let order = this.players.map((p) =>
-          p.id == player.id ? `*${M.formatAtUser(p)}*` : M.formatAtUser(p),
+          p.id == player.id
+            ? `*${M.formatAtUser(p.id)}*`
+            : M.formatAtUser(p.id),
         );
         status += `Player order: ${order}\n`;
         let special =
@@ -481,7 +485,7 @@ class Avalon {
             let voted = acc.approved.concat(acc.rejected);
             let remaining = this.players.length - voted.length;
             this.broadcast(
-              `${M.formatAtUser(vote.player)} voted! ${remaining} vote${
+              `${M.formatAtUser(vote.player.id)} voted! ${remaining} vote${
                 remaining > 1 ? "s" : ""
               } left.`,
             );
@@ -531,7 +535,7 @@ class Avalon {
     } quest.`;
     message += `\nCurrent quest progress: ${this.getStatus(true)}`;
     let order = this.players.map((p) =>
-      p.id == leader.id ? `*${M.formatAtUser(p)}*` : M.formatAtUser(p),
+      p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
     );
     message += `\nPlayer order: ${order}`;
     this.leader = leader;
@@ -572,7 +576,7 @@ class Avalon {
             let remaining = questPlayers.length - completed.length;
             this.broadcast(
               `${M.formatAtUser(
-                questResult.player,
+                questResult.player.id,
               )} completed the quest! ${remaining} remaining...`,
             );
           }
@@ -678,11 +682,11 @@ class Avalon {
                     if (accused.role != "merlin") {
                       this.broadcast(
                         `${status}:crossed_swords:${M.formatAtUser(
-                          assassin,
+                          assassin.id,
                         )} chose ${M.formatAtUser(
-                          accused,
+                          accused.id,
                         )} as MERLIN, not :angel:${M.formatAtUser(
-                          merlin,
+                          merlin.id,
                         )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
                           true,
                         )}`,
@@ -692,9 +696,9 @@ class Avalon {
                     } else {
                       this.broadcast(
                         `${status}:crossed_swords:${M.formatAtUser(
-                          assassin,
+                          assassin.id,
                         )} chose :angel:${M.formatAtUser(
-                          accused,
+                          accused.id,
                         )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
                           true,
                         )}`,
