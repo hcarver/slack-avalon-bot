@@ -20,14 +20,14 @@ class Avalon {
 
   static ROLES = {
     bad: ":red_circle: Minion of Mordred",
-    good: ":large_blue_circle: Loyal Servent of Arthur",
+    good: ":large_blue_circle: Loyal Servant of Arthur",
     assassin: ":crossed_swords: THE ASSASSIN :red_circle: Minion of Mordred",
     oberon: ":alien: OBERON :red_circle: Minion of Mordred",
     morgana:
       ":japanese_ogre: MORGANA :red_circle: Minion of Mordred. You pose as MERLIN",
     mordred: ":smiling_imp: MORDRED :red_circle: Unknown to MERLIN",
-    percival: ":cop: PERCIVAL :large_blue_circle: Loyal Servent of Arthur",
-    merlin: ":angel: MERLIN :large_blue_circle: Loyal Servent of Arthur",
+    percival: ":cop: PERCIVAL :large_blue_circle: Loyal Servant of Arthur",
+    merlin: ":angel: MERLIN :large_blue_circle: Loyal Servant of Arthur",
   };
 
   static ROLE_ASSIGNS = [
@@ -629,7 +629,7 @@ class Avalon {
           let merlin = this.players.filter((player) => player.role == "merlin");
           if (!merlin.length) {
             this.endGame(
-              `:large_blue_circle: Loyal Servents of Arthur win by succeeding 3 quests!`,
+              `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
               "#08e",
             );
             return rx.Observable.return(true);
