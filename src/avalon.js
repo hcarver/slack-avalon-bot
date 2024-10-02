@@ -6,6 +6,96 @@ require("string_score");
 
 rx.config.longStackSupport = true;
 
+class GameUILayer {
+  constructor(slack, api, message_stream) {
+    this.slack = slack;
+    this.api = api;
+    this.message_stream = message_stream;
+  }
+
+  pollForDecision(
+    channel_id,
+    heading_text,
+    options,
+    verb,
+    from_filter,
+    minimum,
+    maximum,
+  ) {
+    const messages = this.message_stream.where((e) => {
+      return e.channel === channel_id;
+    });
+
+    const formattedOptions = options.map(
+      (option, idx) => `- *${idx}*: ${option}`,
+    );
+
+    let sendMessage = rx.Observable.fromCallback(this.api.chat.postMessage);
+
+    sendMessage({
+      channel: channel_id,
+      blocks: [
+        { type: "header", text: { type: "plain_text", text: heading_text } },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: formattedOptions.join("\n"),
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `Choose with, e.g., \`${verb} 1, 2, 3\``,
+          },
+        },
+      ],
+    });
+
+    const result = messages
+      .where((e) => from_filter(e.user))
+      .where((e) => {
+        return (
+          e.text &&
+          e.text.toLowerCase().match(new RegExp(`^${verb.toLowerCase()}`))
+        );
+      })
+      .map((e) => {
+        const selection = [
+          ...new Set(
+            (e.text.match(/\d+/g) || [])
+              .map(Number)
+              .filter((x) => x >= 0 && x < options.length),
+          ),
+        ];
+
+        if (selection.length < minimum || selection.length > maximum) {
+          const message =
+            minimum === maximum
+              ? `exactly ${minimum} options`
+              : `between ${minimum} and ${maximum} options`;
+          sendMessage({
+            channel: channel_id,
+            text: `You must choose ${message}.`,
+          });
+        } else {
+          const selectedOptions = selection.map((idx) => options[idx]);
+          sendMessage({
+            channel: channel_id,
+            text: `You chose ${selectedOptions}`,
+          });
+
+          return selection;
+        }
+      })
+      .where((x) => !!x)
+      .take(1);
+
+    return result;
+  }
+}
+
 class Avalon {
   static MIN_PLAYERS = 5;
 
@@ -124,6 +214,8 @@ class Avalon {
     this.slack = slack;
     this.api = api;
     this.messages = messages;
+    this.gameUx = new GameUILayer(this.slack, this.api, messages);
+
     this.channel = channel;
     this.players = players.map((id) => {
       return { id: id };
@@ -416,34 +508,19 @@ class Avalon {
 
   choosePlayersForQuest(player) {
     let questAssign = this.questAssign();
-    return this.messages
-      .where((e) => e.user === player.id)
-      .map((e) => e.text)
-      .where((text) => text && text.match(/^send /i))
-      .map((text) => text.split(/[,\s]+/).slice(1))
-      .map((chosen) => {
-        if (chosen.length != questAssign.n) {
-          return [];
-        }
-        let questPlayers = [];
-        for (let p of this.players) {
-          if (
-            chosen.some((name) => name.toLowerCase() == p.name.toLowerCase())
-          ) {
-            questPlayers.push(p);
-          }
-        }
-        return questPlayers;
-      })
-      .where((questPlayers) => {
-        if (questPlayers.length != questAssign.n) {
-          this.broadcast(
-            `You need to send ${questAssign.n} players. (You only chosen ${questPlayers.length} valid players)`,
-            "#a60",
-          );
-        }
-        return questPlayers.length == questAssign.n;
-      })
+
+    const playerChoice = this.gameUx.pollForDecision(
+      this.playerDms[player.id],
+      `Choose a team of ${questAssign.n}`,
+      this.players.map((player) => M.formatAtUser(player)),
+      "nominate",
+      (user_id) => user_id === player.id,
+      questAssign.n,
+      questAssign.n,
+    );
+
+    return playerChoice
+      .map((idx) => idx.map((i) => this.players[i]))
       .concatMap((questPlayers) => {
         this.questPlayers = questPlayers;
         let message = `${M.formatAtUser(player)} is sending ${M.pp(
