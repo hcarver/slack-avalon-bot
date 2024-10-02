@@ -9,8 +9,11 @@ class MessageHelpers {
     return messageText && messageText.trim().startsWith(userTag);
   }
 
-  static formatAtUser(user) {
-    return `<@${user.id}|${user.name}>`;
+  static formatAtUser(user_id) {
+    // Accept either an id string, or an object like {id: some_string}.
+    // This isn't beautiful.
+    const id = user_id.id || user_id;
+    return `<@${id}>`;
   }
 
   static pp(userArray) {
