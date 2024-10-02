@@ -643,7 +643,7 @@ class Avalon {
 
           let status = `Quest Results: ${this.getStatus()}\n`;
           this.broadcast(
-            `${status}Victory is near for :large_blue_circle: Loyal Servents of Arthur for succeeding 3 quests!`,
+            `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
           );
           return rx.Observable.defer(() => {
             return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
