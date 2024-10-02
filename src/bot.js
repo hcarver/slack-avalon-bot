@@ -105,18 +105,6 @@ class Bot {
         });
       });
 
-    trigger
-      .where(({ channel }) => {
-        return channel.is_im || channel.is_mpim;
-      })
-      .do(({ channel }) => {
-        this.slack.sendMessage(
-          "Message `play avalon` to a channel to play avalon in that channel.",
-          channel.id,
-        );
-      })
-      .subscribe();
-
     return trigger
       .where(({ channel }) => {
         return !channel.is_im && !channel.is_mpim;
