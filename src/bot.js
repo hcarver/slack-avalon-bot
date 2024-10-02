@@ -14,7 +14,6 @@ class Bot {
   constructor(token) {
     this.slack = new Slack.RtmClient(token, {
       logLevel: process.env.LOG_LEVEL || "error",
-      dataStore: new Slack.MemoryDataStore(),
       autoReconnect: true,
       autoMark: true,
       useRtmConnect: true,
@@ -219,35 +218,12 @@ class Bot {
     // user ID, constrained to `maxPlayers` number of players.
     let pollPlayers = messages
       .where((e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i))
-      .map((e) => e.user)
-      .map((id) => this.slack.dataStore.getUserById(id));
+      .where((e) => e.user !== this.self_id)
+      .map((e) => e.user);
     timeExpired.connect();
 
-    let addPlayers = messages //.where(e => e.user == initiator)
-      .where((e) => e.text && e.text.trim().match(/add /i))
-      .map((e) => e.text.split(/[,\s]+/).slice(1))
-      .flatMap((playerNames) => {
-        let errors = [];
-        let players = playerNames
-          .map((name) => {
-            let player = this.slack.dataStore.getUserByName(name.toLowerCase());
-            if (!player) {
-              errors.push(`Cannot find player ${name}`);
-            }
-            return player;
-          })
-          .filter((player) => !!player);
-        // players.add(this.slack.getUserById(id));
-        if (errors.length) {
-          this.slack.sendMessage(errors.join("\n"), channel.id);
-        }
-        return rx.Observable.fromArray(players);
-      });
-
-    let newPlayerStream = rx.Observable.merge(
-      pollPlayers,
-      addPlayers,
-    ).takeUntil(timeExpired);
+    let newPlayerStream =
+      rx.Observable.merge(pollPlayers).takeUntil(timeExpired);
 
     return newPlayerStream
       .bufferWithTime(300)
@@ -256,7 +232,7 @@ class Bot {
           let messages = [];
           let joinedAlready = [];
           newPlayers = newPlayers.filter((player) => {
-            if (players.find((p) => p.id == player.id)) {
+            if (players.find((p) => p === player)) {
               joinedAlready.push(player);
               return false;
             }
