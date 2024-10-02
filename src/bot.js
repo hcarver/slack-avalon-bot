@@ -336,19 +336,20 @@ class Bot {
     ));
     _.extend(game, this.gameConfig);
 
-    // Listen for messages directed at the bot containing 'quit game.'
-    let quitGameDisp = messages
-      .where((e) => e.text && e.text.match(/^quit game/i))
-      .take(1)
-      .subscribe((e) => {
-        // TODO: Should poll players to make sure they all want to quit.
-        let player = this.slack.dataStore.getUserById(e.user);
-        this.slack.sendMessage(
-          `${M.formatAtUser(player)} has decided to quit the game.`,
-          channel.id,
-        );
-        game.endGame(`${M.formatAtUser(player)} has decided to quit the game.`);
-      });
+    // TODO allow quitting again
+    //    // Listen for messages directed at the bot containing 'quit game.'
+    //    let quitGameDisp = messages
+    //      .where((e) => e.text && e.text.match(/^quit game/i))
+    //      .take(1)
+    //      .subscribe((e) => {
+    //        // TODO: Should poll players to make sure they all want to quit.
+    //        let player = this.slack.dataStore.getUserById(e.user);
+    //        this.slack.sendMessage(
+    //          `${M.formatAtUser(player)} has decided to quit the game.`,
+    //          channel.id,
+    //        );
+    //        game.endGame(`${M.formatAtUser(player)} has decided to quit the game.`);
+    //      });
 
     return SlackApiRx.openDms(this.slack, this.api, players)
       .flatMap((playerDms) =>
