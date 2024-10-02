@@ -167,9 +167,7 @@ class Avalon {
 
     let knownEvils = evils.filter((player) => player.role != "oberon");
     for (let player of this.players) {
-      let message = `\`\`\`${_.times(60, _.constant("\n")).join(
-        "",
-      )}\`\`\` You are ${Avalon.ROLES[player.role]}`;
+      let message = `You are ${Avalon.ROLES[player.role]}`;
       if (this.assassin.id == player.id && player.role != "assassin") {
         message += " as well as :crossed_swords: THE ASSASSIN";
       }
@@ -185,7 +183,7 @@ class Avalon {
           (p) => p.role == "morgana" || p.role == "merlin",
         );
         if (merlins.length == 1) {
-          message += `. ${M.formatAtUser(merlins[0])} is MERLIN`;
+          message += `. ${M.formatAtUser(merlins[0].id)} is MERLIN`;
         } else if (merlins.length > 1) {
           message += `. One of ${M.pp(merlins)} is MERLIN`;
         }
@@ -540,7 +538,7 @@ class Avalon {
     message += `\nPlayer order: ${order}`;
     this.leader = leader;
     this.broadcast(
-      `${message}\nYou can \`/succeed\` or \`/fail\` this mission.`,
+      `${message}\nQuesting players can cast their votes in their DMs.`,
       "#ea0",
     );
     for (let player of questPlayers) {
@@ -650,8 +648,8 @@ class Avalon {
               assassin.action = "killing";
               this.broadcast(
                 `*${M.formatAtUser(
-                  assassin,
-                )}* is the :red_circle::crossed_swords:ASSASSIN. Type \`kill <player>\` to attempt to kill MERLIN`,
+                  assassin.id,
+                )}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN (via DM)`,
                 "#e00",
               );
 
