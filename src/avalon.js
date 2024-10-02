@@ -282,10 +282,11 @@ class Avalon {
       } else if (player.role != "good" && player.role != "oberon") {
         message += `. ${M.pp(knownEvils)} are evil`;
       }
-      message += ` \`\`\`${_.times(60, _.constant("\n")).join(
-        "",
-      )}Scroll up to see your role\`\`\``;
-      this.slack.sendMessage(message, this.playerDms[player.id].id);
+
+      this.api.chat.postMessage({
+        text: message,
+        channel: this.playerDms[player.id],
+      });
     }
 
     this.subscription = rx.Observable.return(true)
@@ -411,15 +412,14 @@ class Avalon {
     } else if (special == "end") {
       attachment.pretext = `*End Avalon Game* (${this.date})`;
     }
-    return this.api.chat.postMessage(this.channel.id, "", {
+    return this.api.chat.postMessage({
+      channel: this.channel.id,
       attachments: [attachment],
     });
   }
 
   dmMessages(player) {
-    return this.messages.where(
-      (e) => e.channel == this.playerDms[player.id],
-    );
+    return this.messages.where((e) => e.channel == this.playerDms[player.id]);
   }
 
   questAssign() {
@@ -450,13 +450,11 @@ class Avalon {
         let special =
           this.questNumber == 0 && this.rejectCount == 0 ? "start" : "";
 
-        this.broadcast(
-          `${status}${M.formatAtUser(
-            player,
-          )} chooses${message} (.eg \`send name1, name2\`)`,
-          "#a60",
-          special,
-        );
+        const full_message = `${status}${M.formatAtUser(
+          player.id,
+        )} will choose${message} (in DM)`;
+
+        this.broadcast(full_message, "#a60", special);
         player.action = "sending";
 
         return this.choosePlayersForQuest(player).concatMap((votes) => {
@@ -523,16 +521,20 @@ class Avalon {
       .map((idx) => idx.map((i) => this.players[i]))
       .concatMap((questPlayers) => {
         this.questPlayers = questPlayers;
-        let message = `${M.formatAtUser(player)} is sending ${M.pp(
+        let message = `${M.formatAtUser(player.id)} is sending ${M.pp(
           questPlayers,
         )} to the ${Avalon.ORDER[this.questNumber]} quest.`;
-        this.broadcast(`${message}\nVote \`/approve\` or \`/reject\``, "#555");
+        this.broadcast(`${message}\nVote in your DMs`, "#555");
         for (let player of this.players) {
           player.action = "voting";
         }
         return rx.Observable.fromArray(this.players)
-          .map((p) =>
-            this.dmMessages(p)
+          .map((p) => {
+            this.api.chat.postMessage({
+              channel: this.playerDms[p.id],
+              text: `${message}\nVote with \`approve\` or \`reject\``,
+            });
+            return this.dmMessages(p)
               .where((e) => e.user === p.id && e.text)
               .map((e) => e.text.trim().toLowerCase())
               .where(
@@ -543,8 +545,8 @@ class Avalon {
               .map((text) => {
                 return { player: p, approve: text.score("approve", 0.5) > 0.5 };
               })
-              .take(1),
-          )
+              .take(1);
+          })
           .mergeAll();
       })
       .take(this.players.length)
@@ -624,8 +626,12 @@ class Avalon {
 
     let runners = 0;
     return rx.Observable.fromArray(questPlayers)
-      .map((player) =>
-        this.dmMessages(player)
+      .map((player) => {
+        this.api.chat.postMessage({
+          channel: this.playerDms[player.id],
+          text: `${message}\nShould the quest \`succeed\` or \`fail\`?`,
+        });
+        return this.dmMessages(player)
           .where((e) => e.user === player.id && e.text)
           .map((e) => e.text.trim().toLowerCase())
           .where(
@@ -635,8 +641,8 @@ class Avalon {
           .map((text) => {
             return { player: player, fail: text.score("fail", 0.5) > 0.5 };
           })
-          .take(1),
-      )
+          .take(1);
+      })
       .mergeAll()
       .take(questPlayers.length)
       .reduce(
