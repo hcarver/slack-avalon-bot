@@ -7,6 +7,10 @@ require("string_score");
 rx.config.longStackSupport = true;
 
 class GameUILayer {
+  slack: any;
+  api: any;
+  message_stream: any;
+
   constructor(slack, api, message_stream) {
     this.slack = slack;
     this.api = api;
@@ -80,7 +84,7 @@ class GameUILayer {
             text: `You must choose ${message}.`,
           });
         } else {
-          const selectedOptions = selection.map((idx) => options[idx]);
+          const selectedOptions = selection.map((idx) => options[idx as number]);
           sendMessage({
             channel: channel_id,
             text: `You chose ${selectedOptions}`,
@@ -96,7 +100,29 @@ class GameUILayer {
   }
 }
 
-class Avalon {
+export class Avalon {
+  players: any;
+  playerDms: any;
+  gameUx: GameUILayer;
+  slack: any;
+  api: any;
+  messages: any;
+  date: any;
+  scheduler: any;
+  channel: any;
+  gameEnded;
+  isRunning;
+  questNumber;
+  rejectCount;
+  progress;
+  specialRoles;
+  leader;
+  evils;
+  assassin;
+  subscription;
+  resistance;
+  questPlayers;
+
   static MIN_PLAYERS = 5;
 
   static MAX_PLAYERS = 10;
@@ -220,7 +246,6 @@ class Avalon {
     this.players = players.map((id) => {
       return { id: id };
     });
-    this.spectators = [];
     this.scheduler = scheduler;
     this.gameEnded = new rx.Subject();
     _.extend(this, Avalon.DEFAULT_CONFIG);
@@ -331,7 +356,6 @@ class Avalon {
   }
 
   revealRoles(excludeMerlin) {
-    excludeMerlin = excludeMerlin || false;
     let lines = [`${M.pp(this.evils)} are :red_circle: Minions of Mordred.`];
     let reveals = {};
     for (let player of this.players) {
@@ -362,19 +386,21 @@ class Avalon {
   }
 
   endGame(message, color, current) {
-    current = current || false;
     let status = `Quest Results: ${this.getStatus(current)}`;
-    message += `\n${status}\n${this.revealRoles()}`;
+    message += `\n${status}\n${this.revealRoles(false)}`;
     this.broadcast(message, color, "end");
     this.quit();
   }
 
-  broadcast(message, color, special) {
+  broadcast(message, color?, special?) {
     let attachment = {
       fallback: message,
       text: message,
       mrkdwn: true,
       mrkdwn_in: ["pretext", "text"],
+      color: undefined,
+      pretext: undefined,
+      thumb_url: undefined
     };
     if (color) attachment.color = color;
     if (special == "start") {
@@ -428,7 +454,7 @@ class Avalon {
     ];
   }
 
-  deferredActionForPlayer(player, timeToPause) {
+  deferredActionForPlayer(player, timeToPause?) {
     timeToPause = timeToPause || 3000;
     return rx.Observable.defer(() => {
       return rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
@@ -574,7 +600,6 @@ class Avalon {
   }
 
   getStatus(current) {
-    current = current || false;
     let status = this.progress.map((res, i) => {
       let questAssign =
         Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
@@ -709,6 +734,7 @@ class Avalon {
           this.endGame(
             `:red_circle: Minions of Mordred win by failing 3 quests!`,
             "#e00",
+            false
           );
         } else if (score.good == 3) {
           let merlin = this.players.filter((player) => player.role == "merlin");
@@ -716,13 +742,14 @@ class Avalon {
             this.endGame(
               `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
               "#08e",
+              false
             );
             return rx.Observable.return(true);
           }
           let assassin = this.assassin;
           merlin = merlin[0];
 
-          let status = `Quest Results: ${this.getStatus()}\n`;
+          let status = `Quest Results: ${this.getStatus(false)}\n`;
           this.broadcast(
             `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
           );
