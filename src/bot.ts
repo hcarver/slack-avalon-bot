@@ -8,6 +8,15 @@ const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
 class Bot {
+  slack: any;
+  api: any;
+  gameConfig: any;
+  gameConfigParams: any;
+  selfname: string;
+  self_id: string;
+  game: any;
+  isPolling: boolean;
+
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
@@ -127,7 +136,7 @@ class Bot {
         return true;
       })
       .flatMap(({ channel, event }) =>
-        this.pollPlayersForGame(messages, { id: channel.id }, event.user),
+        this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null),
       )
       .flatMap((starter) => {
         this.isPolling = false;
@@ -182,7 +191,6 @@ class Bot {
     messages,
     channel,
     initiator,
-    specialChars,
     scheduler,
     timeout,
   ) {
@@ -332,7 +340,7 @@ class Bot {
         rx.Observable.timer(2000).flatMap(() => game.start(playerDms)),
       )
       .do(() => {
-        quitGameDisp.dispose();
+        // quitGameDisp.dispose();
         this.game = null;
       });
   }
@@ -385,23 +393,6 @@ class Bot {
           .join(", ")}`,
       );
     }
-
-    this._loggedOn = true;
-  }
-
-  isLoggedOn() {
-    return this._loggedOn;
-  }
-
-  async getPotentialPlayers() {
-    if (!this.isLoggedOn()) {
-      return [];
-    }
-
-    const users = await this.api.users.list();
-    return users.members.filter(
-      (user) => !user.is_bot && user.name !== "slackbot" && !user.deleted,
-    );
   }
 }
 
