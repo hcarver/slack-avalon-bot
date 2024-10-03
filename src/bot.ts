@@ -8,14 +8,13 @@ const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
 class Bot {
+  self_id: string;
+  isPolling: boolean;
   slack: any;
   api: any;
   gameConfig: any;
   gameConfigParams: any;
-  selfname: string;
-  self_id: string;
   game: any;
-  isPolling: boolean;
 
   // Public: Creates a new instance of the bot.
   //
@@ -37,7 +36,6 @@ class Bot {
   login() {
     this.slack
       .on(Slack.CLIENT_EVENTS.RTM.AUTHENTICATED, (auth) => {
-        this.selfname = auth.self.name;
         this.self_id = auth.self.id;
         console.log(
           `Welcome to Slack. You are ${auth.self.name} (${auth.self.id}) of ${auth.team.name}`,
@@ -70,10 +68,6 @@ class Bot {
     ).subscribe((e) => {
       this.slack.sendMessage(this.welcomeMessage(), e.channel.id);
     });
-
-    let atMentions = messages.where(
-      (e) => e.text && e.text.toLowerCase().match(this.selfname),
-    );
 
     let disp = new rx.CompositeDisposable();
 
