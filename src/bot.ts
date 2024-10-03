@@ -7,7 +7,7 @@ const { WebClient } = require("@slack/web-api");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
-class Bot {
+export class Bot {
   self_id: string;
   isPolling: boolean;
   slack: any;

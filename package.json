@@ -6,7 +6,7 @@
   },
   "repository": "https://github.com/docsend/slack-avalon-bot",
   "scripts": {
-    "start": "ts-node src/main.js",
+    "start": "ts-node src/main.ts",
     "test": "gulp"
   },
   "license": "MIT",
