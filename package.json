@@ -6,7 +6,7 @@
   },
   "repository": "https://github.com/docsend/slack-avalon-bot",
   "scripts": {
-    "start": "node src/main.js",
+    "start": "ts-node src/main.js",
     "test": "gulp"
   },
   "license": "MIT",
@@ -15,15 +15,15 @@
     "gulp": "^3.9.1",
     "gulp-mocha": "^2.2.0",
     "mocha": "^2.4.5",
-    "prettier": "^3.0.3"
+    "prettier": "^3.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.2"
   },
   "dependencies": {
     "@slack/client": "^3",
     "@slack/web-api": "^6.9.0",
     "body-parser": "1.15.0",
-    "express": "^4.x",
     "lodash": "^4.0.1",
-    "pug": "2.0.0-alpha7",
     "rx": "^4.0.7",
     "string_score": "^v0.1"
   },
