@@ -438,10 +438,13 @@ export class Avalon {
     } else if (special == "end") {
       attachment.pretext = `*End Avalon Game* (${this.date})`;
     }
-    return this.api.chat.postMessage({
-      channel: this.channel.id,
-      attachments: [attachment],
-    });
+
+    this.players.map((p) => {
+      this.api.chat.postMessage({
+        channel: this.playerDms[p.id],
+        attachments: [attachment],
+      });
+    })
   }
 
   dmMessages(player) {
