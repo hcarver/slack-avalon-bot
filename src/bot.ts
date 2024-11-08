@@ -125,10 +125,10 @@ export class Bot {
         if (this.isPolling) {
           return false;
         } else if (this.game) {
-          this.slack.sendMessage(
-            "Another game is in progress, quit that first.",
-            channel.id,
-          );
+          this.bolt.client.chat.postMessage({
+            text: "Another game is in progress, quit that first.",
+            channel: channel.id,
+          });
           return false;
         }
         return true;
@@ -282,7 +282,10 @@ export class Bot {
               )} are in game so far.`,
             );
           }
-          this.slack.sendMessage(messages.join("\n"), channel.id);
+          this.bolt.client.chat.postMessage({
+            text: messages.join("\n"),
+            channel: channel.id,
+          });
         }
         return players;
       }, [])
@@ -301,10 +304,10 @@ export class Bot {
   startGame(players, messages, channel) {
     if (players.length < Avalon.MIN_PLAYERS) {
       // TODO: send status back to webpage
-      this.slack.sendMessage(
-        `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
-        channel.id,
-      );
+      this.bolt.client.chat.postMessage({
+        text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
+        channel: channel.id,
+      });
       return rx.Observable.empty();
     }
 
