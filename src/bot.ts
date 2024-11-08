@@ -1,6 +1,6 @@
 "use strict";
 
-import { App, KnownEventFromType, webApi } from "@slack/bolt";
+import { App } from "@slack/bolt";
 import { GenericMessageEvent } from "@slack/types";
 import * as rx from "rx";
 
@@ -35,7 +35,7 @@ export class Bot {
     //   autoMark: true,
     //   useRtmConnect: true,
     // });
-    this.api = new webApi.WebClient(token);
+    this.api = this.bolt.client;
 
     this.gameConfig = Avalon.DEFAULT_CONFIG;
     this.gameConfigParams = ["timeout", "mode"];
