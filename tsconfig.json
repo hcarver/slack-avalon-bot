@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "moduleResolution": "nodenext",
     "outDir": "./built",
     "allowJs": true,
     "target": "es6"
