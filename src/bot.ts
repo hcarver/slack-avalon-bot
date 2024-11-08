@@ -10,9 +10,7 @@ const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
 export class Bot {
-  self_id: string;
   isPolling: boolean;
-  slack: any;
   api: any;
   gameConfig: any;
   gameConfigParams: any;
@@ -312,13 +310,7 @@ export class Bot {
       return rx.Observable.empty();
     }
 
-    let game = (this.game = new Avalon(
-      this.slack,
-      this.api,
-      messages,
-      channel,
-      players,
-    ));
+    let game = (this.game = new Avalon(this.api, messages, channel, players));
     _.extend(game, this.gameConfig);
 
     // TODO allow quitting again
@@ -336,7 +328,7 @@ export class Bot {
     //        game.endGame(`${M.formatAtUser(player)} has decided to quit the game.`);
     //      });
 
-    return SlackApiRx.openDms(this.slack, this.api, players)
+    return SlackApiRx.openDms(this.api, players)
       .flatMap((playerDms) =>
         rx.Observable.timer(2000).flatMap(() => game.start(playerDms)),
       )
