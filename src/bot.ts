@@ -19,7 +19,7 @@ export class Bot {
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
-  constructor(token) {
+  constructor(token, connectionToken) {
     this.slack = new Slack.RtmClient(token, {
       logLevel: process.env.LOG_LEVEL || "error",
       autoReconnect: true,
