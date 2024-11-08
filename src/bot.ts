@@ -1,11 +1,10 @@
 "use strict";
 
-import { App } from '@slack/bolt';
-import { WebClient } from "@slack/web-api";
+import { App, KnownEventFromType, webApi } from "@slack/bolt";
+import { GenericMessageEvent } from "@slack/types";
 import * as rx from "rx";
 
 const _ = require("lodash");
-const Slack = require("@slack/client");
 const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
@@ -18,7 +17,7 @@ export class Bot {
   gameConfig: any;
   gameConfigParams: any;
   game: any;
-  bolt: App
+  bolt: App;
 
   // Public: Creates a new instance of the bot.
   //
@@ -28,7 +27,7 @@ export class Bot {
       token,
       appToken: connectionToken,
       socketMode: true,
-    })
+    });
 
     // this.slack = new Slack.RtmClient(token, {
     //   logLevel: process.env.LOG_LEVEL || "error",
@@ -36,7 +35,7 @@ export class Bot {
     //   autoMark: true,
     //   useRtmConnect: true,
     // });
-    this.api = new WebClient(token);
+    this.api = new webApi.WebClient(token);
 
     this.gameConfig = Avalon.DEFAULT_CONFIG;
     this.gameConfigParams = ["timeout", "mode"];
@@ -44,8 +43,7 @@ export class Bot {
 
   // Public: Brings this bot online and starts handling messages sent to it.
   async login() {
-
-    await this.bolt.start()
+    await this.bolt.start();
 
     this.respondToMessages();
   }
@@ -55,29 +53,27 @@ export class Bot {
   //
   // Returns a {Disposable} that will end this subscription
   respondToMessages() {
-    this.bolt.event('member_joined_channel', async ({ event, client, logger }) => {
-      client.chat.postMessage({
-        channel: event.channel,
-        text: this.welcomeMessage()
-      })
-    })
+    this.bolt.event(
+      "member_joined_channel",
+      async ({ event, client, logger }) => {
+        client.chat.postMessage({
+          channel: event.channel,
+          text: this.welcomeMessage(),
+        });
+      },
+    );
 
-    // let messages = rx.Observable.fromEvent(
-    //   this.slack,
-    //   Slack.RTM_EVENTS.MESSAGE,
-    // );
+    const messages = rx.Observable.create<GenericMessageEvent>((observer) => {
+      this.bolt.event("message", async ({ event, client, logger }) => {
+        if (event.subtype === undefined) {
+          observer.onNext(event as GenericMessageEvent);
+        }
+      });
+    });
 
-    // rx.Observable.fromEvent(
-    //   this.slack,
-    //   Slack.RTM_EVENTS.CHANNEL_JOINED,
-    // ).subscribe((e) => {
-    //   this.slack.sendMessage(this.welcomeMessage(), e.channel.id);
-    // });
+    let disp = new rx.CompositeDisposable();
 
-    // let disp = new rx.CompositeDisposable();
-
-    // disp.add(this.handleStartGameMessages(messages));
-    // return disp;
+    disp.add(this.handleStartGameMessages(messages));
   }
 
   includeRole(role) {
@@ -100,16 +96,18 @@ export class Bot {
   // messages - An {Observable} representing messages posted to a channel
   //
   // Returns a {Disposable} that will end this subscription
-  handleStartGameMessages(messages) {
+  handleStartGameMessages(messages: rx.Observable<GenericMessageEvent>) {
     const trigger = messages
-      .where((e) => e.user !== this.self_id)
+      .where((e) => e.subtype === undefined)
       .concatMap((e) => {
-        return rx.Observable.fromPromise(async () => {
-          const result = await this.api.conversations.info({
-            channel: e.channel,
-          });
-          return { event: e, channel: result.channel };
-        });
+        return rx.Observable.fromPromise(
+          (async () => {
+            const result = await this.api.conversations.info({
+              channel: e.channel,
+            });
+            return { event: e, channel: result.channel };
+          })(),
+        );
       });
 
     return trigger
@@ -119,7 +117,8 @@ export class Bot {
       .where(
         ({ channel, event }) =>
           event.text &&
-          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i),
+          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i) !=
+            null,
       )
       .where(({ channel, event }) => {
         this.gameConfig.resistance = event.text.match(/resistance/i);
