@@ -156,18 +156,20 @@ export class Bot {
   //
   // Returns an {Observable} sequence that signals expiration of the message
   postMessageWithTimeout(channel, formatMessage, scheduler, timeout) {
-    let sendMessage = rx.Observable.fromCallback(
-      this.slack.sendMessage,
-      this.slack,
-    );
+    const sendMessagePromise = this.bolt.client.chat.postMessage({
+      text: formatMessage(timeout),
+      channel: channel.id,
+    });
 
-    let timeExpired = sendMessage(formatMessage(timeout), channel.id)
+    let sendMessage = rx.Observable.fromPromise(sendMessagePromise);
+
+    let timeExpired = sendMessage
       .flatMap((payload) => {
         return rx.Observable.timer(0, 1000, scheduler)
           .take(timeout + 1)
           .do((x) => {
             this.api.chat.update({
-              ts: payload[1].ts,
+              ts: payload.ts,
               channel: channel.id,
               text: formatMessage(`${timeout - x}`),
             });
@@ -185,24 +187,21 @@ export class Bot {
   // channel - The channel where the deal message was posted
   //
   // Returns an {Observable} that signals completion of the game
-  pollPlayersForGame(
-    messages,
-    channel,
-    initiator,
-    scheduler,
-    timeout,
-  ) {
+  pollPlayersForGame(messages, channel, initiator, scheduler, timeout) {
     scheduler = scheduler || rx.Scheduler.timeout;
     timeout = timeout || 60;
     this.isPolling = true;
 
     if (this.gameConfig.resistance) {
-      this.slack.sendMessage(
-        "Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png",
-        channel.id,
-      );
+      this.bolt.client.chat.postMessage({
+        text: "Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png",
+        channel: channel.id,
+      });
     } else {
-      this.slack.sendMessage("Who wants to play Avalon?", channel.id);
+      this.bolt.client.chat.postMessage({
+        text: "Who wants to play Avalon?",
+        channel: channel.id,
+      });
     }
 
     // let formatMessage = t => [
@@ -269,7 +268,7 @@ export class Bot {
               } joined the game.`,
             );
           }
-
+          // @ts-expect-error
           players.splice.apply(players, [0, 0].concat(newPlayers));
 
           if (players.length > 1 && players.length < Avalon.MAX_PLAYERS) {
