@@ -23,6 +23,7 @@
     "@slack/bolt": "^4.1.0",
     "@slack/client": "^3",
     "@slack/web-api": "^6.9.0",
+    "@types/rx": "^4.1.4",
     "body-parser": "1.15.0",
     "lodash": "^4.0.1",
     "rx": "^4.0.7",
