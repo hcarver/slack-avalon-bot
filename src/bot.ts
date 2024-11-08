@@ -55,22 +55,29 @@ export class Bot {
   //
   // Returns a {Disposable} that will end this subscription
   respondToMessages() {
-    let messages = rx.Observable.fromEvent(
-      this.slack,
-      Slack.RTM_EVENTS.MESSAGE,
-    );
+    this.bolt.event('member_joined_channel', async ({ event, client, logger }) => {
+      client.chat.postMessage({
+        channel: event.channel,
+        text: this.welcomeMessage()
+      })
+    })
 
-    rx.Observable.fromEvent(
-      this.slack,
-      Slack.RTM_EVENTS.CHANNEL_JOINED,
-    ).subscribe((e) => {
-      this.slack.sendMessage(this.welcomeMessage(), e.channel.id);
-    });
+    // let messages = rx.Observable.fromEvent(
+    //   this.slack,
+    //   Slack.RTM_EVENTS.MESSAGE,
+    // );
 
-    let disp = new rx.CompositeDisposable();
+    // rx.Observable.fromEvent(
+    //   this.slack,
+    //   Slack.RTM_EVENTS.CHANNEL_JOINED,
+    // ).subscribe((e) => {
+    //   this.slack.sendMessage(this.welcomeMessage(), e.channel.id);
+    // });
 
-    disp.add(this.handleStartGameMessages(messages));
-    return disp;
+    // let disp = new rx.CompositeDisposable();
+
+    // disp.add(this.handleStartGameMessages(messages));
+    // return disp;
   }
 
   includeRole(role) {
