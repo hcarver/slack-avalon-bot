@@ -232,7 +232,7 @@ export class Bot {
 
     return newPlayerStream
       .bufferWithTime(300)
-      .reduce((players, newPlayers) => {
+      .reduce((players: string[], newPlayers) => {
         if (newPlayers.length) {
           let messages = [];
           let joinedAlready = [];
@@ -268,8 +268,7 @@ export class Bot {
               } joined the game.`,
             );
           }
-          // @ts-expect-error
-          players.splice.apply(players, [0, 0].concat(newPlayers));
+          players.splice(0, 0, ...newPlayers);
 
           if (players.length > 1 && players.length < Avalon.MAX_PLAYERS) {
             messages.push(
