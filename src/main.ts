@@ -14,5 +14,17 @@ try {
   process.exit(1);
 }
 
-const bot = new Bot(token);
+let connectionToken;
+try {
+  connectionToken =
+    process.env.SLACK_AVALON_CONNECTION_TOKEN ||
+    fs.readFileSync("connectionToken.txt", "utf8").trim();
+} catch (error) {
+  console.log(
+    "Your API token should be placed in a 'connectionToken.txt' file, which is missing.",
+  );
+  process.exit(1);
+}
+
+const bot = new Bot(token, connectionToken);
 bot.login();

@@ -5,16 +5,9 @@ const assert = require('chai').assert;
 const Avalon = require('../src/avalon');
 
 describe('Avalon', function() {
-  var game, slack, api, messages, scheduler, players, playerDms, channel, lastMessage;
+  var game, api, messages, scheduler, players, playerDms, channel, lastMessage;
 
   beforeEach(function() {
-    slack = {
-      token: 0xDEADBEEF,
-      sendMessage: function(message, id) {
-        lastMessage = message.replace(/\n+/g,'\n');
-        console.log(`sendMessage(${id}): ${lastMessage}`);
-      }
-    };
     api = {
       token: 0xDEADBEEF,
       chat: {
@@ -57,7 +50,7 @@ describe('Avalon', function() {
       8: { id: 'dm8' }
     };
 
-    game = new Avalon(slack, api, messages, channel, players, scheduler);
+    game = new Avalon(api, messages, channel, players, scheduler);
   });
 
   afterEach(function() {
