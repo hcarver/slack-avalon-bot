@@ -1,6 +1,5 @@
 "use strict";
 const rx = require("rx");
-const Slack = require("@slack/client");
 
 class SlackApiRx {
   // Public: Retrieves DM channels for all of the given users, opening any that
