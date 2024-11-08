@@ -222,8 +222,10 @@ export class Bot {
     // Look for messages containing the word 'yes' and map them to a unique
     // user ID, constrained to `maxPlayers` number of players.
     let pollPlayers = messages
-      .where((e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i))
-      .where((e) => e.user !== this.self_id)
+      .where(
+        (e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i) != null,
+      )
+      //.where((e) => e.user !== this.self_id) (bot messages excluded by subtype)
       .map((e) => e.user);
     timeExpired.connect();
 
