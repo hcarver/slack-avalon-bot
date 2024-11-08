@@ -1,9 +1,12 @@
 "use strict";
+
+import { App } from '@slack/bolt';
+import { WebClient } from "@slack/web-api";
+
 const rx = require("rx");
 const _ = require("lodash");
 const Slack = require("@slack/client");
 const SlackApiRx = require("./slack-api-rx");
-const { WebClient } = require("@slack/web-api");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
@@ -15,17 +18,24 @@ export class Bot {
   gameConfig: any;
   gameConfigParams: any;
   game: any;
+  bolt: App
 
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
   constructor(token, connectionToken) {
-    this.slack = new Slack.RtmClient(token, {
-      logLevel: process.env.LOG_LEVEL || "error",
-      autoReconnect: true,
-      autoMark: true,
-      useRtmConnect: true,
-    });
+    this.bolt = new App({
+      token,
+      appToken: connectionToken,
+      socketMode: true,
+    })
+
+    // this.slack = new Slack.RtmClient(token, {
+    //   logLevel: process.env.LOG_LEVEL || "error",
+    //   autoReconnect: true,
+    //   autoMark: true,
+    //   useRtmConnect: true,
+    // });
     this.api = new WebClient(token);
 
     this.gameConfig = Avalon.DEFAULT_CONFIG;
@@ -33,21 +43,9 @@ export class Bot {
   }
 
   // Public: Brings this bot online and starts handling messages sent to it.
-  login() {
-    this.slack
-      .on(Slack.CLIENT_EVENTS.RTM.AUTHENTICATED, (auth) => {
-        this.self_id = auth.self.id;
-        console.log(
-          `Welcome to Slack. You are ${auth.self.name} (${auth.self.id}) of ${auth.team.name}`,
-        );
-      })
-      .on(Slack.CLIENT_EVENTS.RTM.RTM_CONNECTION_OPENED, () =>
-        this.onClientOpened(),
-      )
-      .on(Slack.CLIENT_EVENTS.UNABLE_TO_RTM_START, (err) =>
-        console.trace("Error emitted:", err),
-      )
-      .start();
+  async login() {
+
+    await this.bolt.start()
 
     this.respondToMessages();
   }
