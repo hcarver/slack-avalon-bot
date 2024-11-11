@@ -1,6 +1,5 @@
 "use strict";
 const rx = require("rx");
-const Slack = require("@slack/client");
 
 class SlackApiRx {
   // Public: Retrieves DM channels for all of the given users, opening any that
@@ -10,10 +9,10 @@ class SlackApiRx {
   // users - The users to fetch DM channels for
   //
   // Returns an {Observable} that signals completion
-  static openDms(slack, api, users) {
+  static openDms(api, users) {
     let ret = rx.Observable.fromArray(users)
       .flatMap((user) => {
-        const dmProm = SlackApiRx.openDm(slack, api, user);
+        const dmProm = SlackApiRx.openDm(api, user);
         return rx.Observable.fromPromise(dmProm);
       })
       .reduce((acc, x) => {
@@ -30,7 +29,7 @@ class SlackApiRx {
   //
   // Returns an {Observable} that signals completion, or an error if the API
   // call fails
-  static openDm(slack, api, user) {
+  static openDm(api, user) {
     return api.conversations.open({ users: user }).then((resp) => {
       return { id: user, dm: resp.channel.id };
     });

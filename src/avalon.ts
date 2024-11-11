@@ -7,12 +7,10 @@ require("string_score");
 rx.config.longStackSupport = true;
 
 class GameUILayer {
-  slack: any;
   api: any;
   message_stream: any;
 
-  constructor(slack, api, message_stream) {
-    this.slack = slack;
+  constructor(api, message_stream) {
     this.api = api;
     this.message_stream = message_stream;
   }
@@ -104,7 +102,6 @@ export class Avalon {
   players: any;
   playerDms: any;
   gameUx: GameUILayer;
-  slack: any;
   api: any;
   messages: any;
   date: any;
@@ -235,12 +232,11 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(slack, api, messages, channel, players, scheduler) {
+  constructor(api, messages, channel, players, scheduler) {
     scheduler = scheduler || rx.Scheduler.timeout;
-    this.slack = slack;
     this.api = api;
     this.messages = messages;
-    this.gameUx = new GameUILayer(this.slack, this.api, messages);
+    this.gameUx = new GameUILayer(this.api, messages);
 
     this.channel = channel;
     this.players = players.map((id) => {

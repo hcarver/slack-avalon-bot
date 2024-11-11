@@ -1,53 +1,47 @@
 "use strict";
-const rx = require("rx");
+
+import { App } from "@slack/bolt";
+import { GenericMessageEvent } from "@slack/types";
+import * as rx from "rx";
+
 const _ = require("lodash");
-const Slack = require("@slack/client");
 const SlackApiRx = require("./slack-api-rx");
-const { WebClient } = require("@slack/web-api");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
 export class Bot {
-  self_id: string;
   isPolling: boolean;
-  slack: any;
   api: any;
   gameConfig: any;
   gameConfigParams: any;
   game: any;
+  bolt: App;
 
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
-  constructor(token) {
-    this.slack = new Slack.RtmClient(token, {
-      logLevel: process.env.LOG_LEVEL || "error",
-      autoReconnect: true,
-      autoMark: true,
-      useRtmConnect: true,
+  constructor(token, connectionToken) {
+    this.bolt = new App({
+      token,
+      appToken: connectionToken,
+      socketMode: true,
     });
-    this.api = new WebClient(token);
+
+    // this.slack = new Slack.RtmClient(token, {
+    //   logLevel: process.env.LOG_LEVEL || "error",
+    //   autoReconnect: true,
+    //   autoMark: true,
+    //   useRtmConnect: true,
+    // });
+    this.api = this.bolt.client;
 
     this.gameConfig = Avalon.DEFAULT_CONFIG;
     this.gameConfigParams = ["timeout", "mode"];
   }
 
   // Public: Brings this bot online and starts handling messages sent to it.
-  login() {
-    this.slack
-      .on(Slack.CLIENT_EVENTS.RTM.AUTHENTICATED, (auth) => {
-        this.self_id = auth.self.id;
-        console.log(
-          `Welcome to Slack. You are ${auth.self.name} (${auth.self.id}) of ${auth.team.name}`,
-        );
-      })
-      .on(Slack.CLIENT_EVENTS.RTM.RTM_CONNECTION_OPENED, () =>
-        this.onClientOpened(),
-      )
-      .on(Slack.CLIENT_EVENTS.UNABLE_TO_RTM_START, (err) =>
-        console.trace("Error emitted:", err),
-      )
-      .start();
+  async login() {
+    await this.bolt.start();
 
     this.respondToMessages();
   }
@@ -57,22 +51,27 @@ export class Bot {
   //
   // Returns a {Disposable} that will end this subscription
   respondToMessages() {
-    let messages = rx.Observable.fromEvent(
-      this.slack,
-      Slack.RTM_EVENTS.MESSAGE,
+    this.bolt.event(
+      "member_joined_channel",
+      async ({ event, client, logger }) => {
+        client.chat.postMessage({
+          channel: event.channel,
+          text: this.welcomeMessage(),
+        });
+      },
     );
 
-    rx.Observable.fromEvent(
-      this.slack,
-      Slack.RTM_EVENTS.CHANNEL_JOINED,
-    ).subscribe((e) => {
-      this.slack.sendMessage(this.welcomeMessage(), e.channel.id);
+    const messages = rx.Observable.create<GenericMessageEvent>((observer) => {
+      this.bolt.event("message", async ({ event, client, logger }) => {
+        if (event.subtype === undefined) {
+          observer.onNext(event as GenericMessageEvent);
+        }
+      });
     });
 
     let disp = new rx.CompositeDisposable();
 
     disp.add(this.handleStartGameMessages(messages));
-    return disp;
   }
 
   includeRole(role) {
@@ -95,16 +94,18 @@ export class Bot {
   // messages - An {Observable} representing messages posted to a channel
   //
   // Returns a {Disposable} that will end this subscription
-  handleStartGameMessages(messages) {
+  handleStartGameMessages(messages: rx.Observable<GenericMessageEvent>) {
     const trigger = messages
-      .where((e) => e.user !== this.self_id)
+      .where((e) => e.subtype === undefined)
       .concatMap((e) => {
-        return rx.Observable.fromPromise(async () => {
-          const result = await this.api.conversations.info({
-            channel: e.channel,
-          });
-          return { event: e, channel: result.channel };
-        });
+        return rx.Observable.fromPromise(
+          (async () => {
+            const result = await this.api.conversations.info({
+              channel: e.channel,
+            });
+            return { event: e, channel: result.channel };
+          })(),
+        );
       });
 
     return trigger
@@ -114,17 +115,18 @@ export class Bot {
       .where(
         ({ channel, event }) =>
           event.text &&
-          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i),
+          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i) !=
+            null,
       )
       .where(({ channel, event }) => {
         this.gameConfig.resistance = event.text.match(/resistance/i);
         if (this.isPolling) {
           return false;
         } else if (this.game) {
-          this.slack.sendMessage(
-            "Another game is in progress, quit that first.",
-            channel.id,
-          );
+          this.bolt.client.chat.postMessage({
+            text: "Another game is in progress, quit that first.",
+            channel: channel.id,
+          });
           return false;
         }
         return true;
@@ -152,18 +154,20 @@ export class Bot {
   //
   // Returns an {Observable} sequence that signals expiration of the message
   postMessageWithTimeout(channel, formatMessage, scheduler, timeout) {
-    let sendMessage = rx.Observable.fromCallback(
-      this.slack.sendMessage,
-      this.slack,
-    );
+    const sendMessagePromise = this.bolt.client.chat.postMessage({
+      text: formatMessage(timeout),
+      channel: channel.id,
+    });
 
-    let timeExpired = sendMessage(formatMessage(timeout), channel.id)
+    let sendMessage = rx.Observable.fromPromise(sendMessagePromise);
+
+    let timeExpired = sendMessage
       .flatMap((payload) => {
         return rx.Observable.timer(0, 1000, scheduler)
           .take(timeout + 1)
           .do((x) => {
             this.api.chat.update({
-              ts: payload[1].ts,
+              ts: payload.ts,
               channel: channel.id,
               text: formatMessage(`${timeout - x}`),
             });
@@ -181,24 +185,21 @@ export class Bot {
   // channel - The channel where the deal message was posted
   //
   // Returns an {Observable} that signals completion of the game
-  pollPlayersForGame(
-    messages,
-    channel,
-    initiator,
-    scheduler,
-    timeout,
-  ) {
+  pollPlayersForGame(messages, channel, initiator, scheduler, timeout) {
     scheduler = scheduler || rx.Scheduler.timeout;
     timeout = timeout || 60;
     this.isPolling = true;
 
     if (this.gameConfig.resistance) {
-      this.slack.sendMessage(
-        "Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png",
-        channel.id,
-      );
+      this.bolt.client.chat.postMessage({
+        text: "Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png",
+        channel: channel.id,
+      });
     } else {
-      this.slack.sendMessage("Who wants to play Avalon?", channel.id);
+      this.bolt.client.chat.postMessage({
+        text: "Who wants to play Avalon?",
+        channel: channel.id,
+      });
     }
 
     // let formatMessage = t => [
@@ -219,8 +220,10 @@ export class Bot {
     // Look for messages containing the word 'yes' and map them to a unique
     // user ID, constrained to `maxPlayers` number of players.
     let pollPlayers = messages
-      .where((e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i))
-      .where((e) => e.user !== this.self_id)
+      .where(
+        (e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i) != null,
+      )
+      //.where((e) => e.user !== this.self_id) (bot messages excluded by subtype)
       .map((e) => e.user);
     timeExpired.connect();
 
@@ -229,7 +232,7 @@ export class Bot {
 
     return newPlayerStream
       .bufferWithTime(300)
-      .reduce((players, newPlayers) => {
+      .reduce((players: string[], newPlayers) => {
         if (newPlayers.length) {
           let messages = [];
           let joinedAlready = [];
@@ -265,8 +268,7 @@ export class Bot {
               } joined the game.`,
             );
           }
-
-          players.splice.apply(players, [0, 0].concat(newPlayers));
+          players.splice(0, 0, ...newPlayers);
 
           if (players.length > 1 && players.length < Avalon.MAX_PLAYERS) {
             messages.push(
@@ -279,7 +281,10 @@ export class Bot {
               )} are in game so far.`,
             );
           }
-          this.slack.sendMessage(messages.join("\n"), channel.id);
+          this.bolt.client.chat.postMessage({
+            text: messages.join("\n"),
+            channel: channel.id,
+          });
         }
         return players;
       }, [])
@@ -298,20 +303,14 @@ export class Bot {
   startGame(players, messages, channel) {
     if (players.length < Avalon.MIN_PLAYERS) {
       // TODO: send status back to webpage
-      this.slack.sendMessage(
-        `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
-        channel.id,
-      );
+      this.bolt.client.chat.postMessage({
+        text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
+        channel: channel.id,
+      });
       return rx.Observable.empty();
     }
 
-    let game = (this.game = new Avalon(
-      this.slack,
-      this.api,
-      messages,
-      channel,
-      players,
-    ));
+    let game = (this.game = new Avalon(this.api, messages, channel, players));
     _.extend(game, this.gameConfig);
 
     // TODO allow quitting again
@@ -329,7 +328,7 @@ export class Bot {
     //        game.endGame(`${M.formatAtUser(player)} has decided to quit the game.`);
     //      });
 
-    return SlackApiRx.openDms(this.slack, this.api, players)
+    return SlackApiRx.openDms(this.api, players)
       .flatMap((playerDms) =>
         rx.Observable.timer(2000).flatMap(() => game.start(playerDms)),
       )
