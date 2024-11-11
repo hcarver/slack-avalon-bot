@@ -1,4 +1,8 @@
 "use strict";
+
+import { webApi } from "@slack/bolt";
+import { MessageAttachment } from "@slack/types";
+
 const rx = require("rx");
 const _ = require("lodash");
 const M = require("./message-helpers");
@@ -7,7 +11,7 @@ require("string_score");
 rx.config.longStackSupport = true;
 
 class GameUILayer {
-  api: any;
+  api: webApi.WebClient;
   message_stream: any;
 
   constructor(api, message_stream) {
@@ -102,7 +106,7 @@ export class Avalon {
   players: any;
   playerDms: any;
   gameUx: GameUILayer;
-  api: any;
+  api: webApi.WebClient;
   messages: any;
   date: any;
   scheduler: any;
@@ -389,14 +393,13 @@ export class Avalon {
   }
 
   broadcast(message, color?, special?) {
-    let attachment = {
+    let attachment: MessageAttachment = {
       fallback: message,
       text: message,
-      mrkdwn: true,
       mrkdwn_in: ["pretext", "text"],
       color: undefined,
       pretext: undefined,
-      thumb_url: undefined
+      thumb_url: undefined,
     };
     if (color) attachment.color = color;
     if (special == "start") {
@@ -440,7 +443,7 @@ export class Avalon {
         channel: this.playerDms[p.id],
         attachments: [attachment],
       });
-    })
+    });
   }
 
   dmMessages(player) {
