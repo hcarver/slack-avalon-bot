@@ -692,6 +692,41 @@ export class Avalon {
         this.api.chat.postMessage({
           channel: this.playerDms[player.id],
           text: `${message}\nShould the quest \`succeed\` or \`fail\`?`,
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: message,
+              },
+            },
+            {
+              type: "actions",
+              block_id: "quest-success-vote",
+              elements: [
+                {
+                  type: "button",
+                  text: {
+                    type: "plain_text",
+                    text: ":white_check_mark: Succeed",
+                    emoji: true,
+                  },
+                  value: "succeed",
+                  action_id: "succeed",
+                },
+                {
+                  type: "button",
+                  text: {
+                    type: "plain_text",
+                    text: ":x: Fail",
+                    emoji: true,
+                  },
+                  value: "fail",
+                  action_id: "fail",
+                },
+              ],
+            },
+          ],
         });
         return this.dmMessages(player)
           .where((e) => e.user === player.id && e.text)
