@@ -1,5 +1,12 @@
 {
+    "display_information": {
+         "name": "<<your app name here>>"
+    },
     "features": {
+        "bot_user": {
+            "display_name": "<< your bot nam here >>",
+            "always_online": false
+        },
         "app_home": {
           "home_tab_enabled": true,
           "messages_tab_enabled": true,
