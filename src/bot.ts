@@ -3,6 +3,7 @@
 import { App } from "@slack/bolt";
 import { GenericMessageEvent } from "@slack/types";
 import * as rx from "rx";
+import { ActionPayload } from "./action_payloads";
 
 const _ = require("lodash");
 const SlackApiRx = require("./slack-api-rx");
