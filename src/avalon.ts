@@ -561,6 +561,41 @@ export class Avalon {
             this.api.chat.postMessage({
               channel: this.playerDms[p.id],
               text: `${message}\nVote with \`approve\` or \`reject\``,
+              blocks: [
+                {
+                  type: "section",
+                  text: {
+                    type: "mrkdwn",
+                    text: message,
+                  },
+                },
+                {
+                  type: "actions",
+                  block_id: "quest-team-vote",
+                  elements: [
+                    {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: ":white_check_mark: Approve",
+                        emoji: true,
+                      },
+                      value: "approve",
+                      action_id: "approve",
+                    },
+                    {
+                      type: "button",
+                      text: {
+                        type: "plain_text",
+                        text: ":x: Reject",
+                        emoji: true,
+                      },
+                      value: "reject",
+                      action_id: "reject",
+                    },
+                  ],
+                },
+              ],
             });
             return this.dmMessages(p)
               .where((e) => e.user === p.id && e.text)
