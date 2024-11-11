@@ -232,7 +232,7 @@ export class Bot {
 
     return newPlayerStream
       .bufferWithTime(300)
-      .reduce((players: string[], newPlayers) => {
+      .reduce((players: string[], newPlayers: string[]) => {
         if (newPlayers.length) {
           let messages = [];
           let joinedAlready = [];
@@ -309,6 +309,11 @@ export class Bot {
       });
       return rx.Observable.empty();
     }
+
+    this.bolt.client.chat.postMessage({
+      text: `Starting game now. Check your DMs!`,
+      channel: channel.id,
+    });
 
     let game = (this.game = new Avalon(this.api, messages, channel, players));
     _.extend(game, this.gameConfig);
