@@ -68,6 +68,32 @@ export class Bot {
           observer.onNext(event as GenericMessageEvent);
         }
       });
+
+      /* this covers buttons, checkboxes etc. from block kit messages.
+         For now we just synthesize a message
+
+         Unhelpfully, the slack typescript definitions don't know about this data - see https://api.slack.com/reference/interaction-payloads/block-actions
+         */
+      this.bolt.action(
+        { block_id: /quest-team-vote|quest-success-vote/ },
+        async ({ action, body, ack }) => {
+          await ack();
+          const blockPayload = body as ActionPayload;
+          const ts = blockPayload.actions[0].action_ts;
+
+          const syntheticMessage = {
+            type: "message",
+            subtype: undefined,
+            channel: blockPayload.channel.id,
+            channel_type: "mpim",
+            user: blockPayload.user.id,
+            ts,
+            event_ts: ts,
+            text: blockPayload.actions[0].value,
+          } satisfies GenericMessageEvent;
+          observer.onNext(syntheticMessage);
+        },
+      );
     });
 
     let disp = new rx.CompositeDisposable();
