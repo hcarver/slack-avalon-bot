@@ -1,6 +1,6 @@
 "use strict";
 
-import { webApi } from "@slack/bolt";
+import { App, CheckboxesAction, webApi } from "@slack/bolt";
 import { MessageAttachment } from "@slack/types";
 
 const rx = require("rx");
@@ -12,14 +12,14 @@ rx.config.longStackSupport = true;
 
 class GameUILayer {
   api: webApi.WebClient;
-  message_stream: any;
+  app: App;
 
-  constructor(api, message_stream) {
+  constructor(api, app) {
     this.api = api;
-    this.message_stream = message_stream;
+    this.app = app;
   }
 
-  pollForDecision(
+  async pollForDecision(
     channel_id,
     heading_text,
     options,
@@ -28,75 +28,76 @@ class GameUILayer {
     minimum,
     maximum,
   ) {
-    const messages = this.message_stream.where((e) => {
-      return e.channel === channel_id;
-    });
+    const checkbox_id = `${(Math.random() + 1).toString(36)}`;
+    const submit_id = `${(Math.random() + 1).toString(36)}`;
+    let selected_options = []
 
-    const formattedOptions = options.map(
-      (option, idx) => `- *${idx}*: ${option}`,
-    );
-
-    let sendMessage = rx.Observable.fromCallback(this.api.chat.postMessage);
-
-    sendMessage({
-      channel: channel_id,
-      blocks: [
-        { type: "header", text: { type: "plain_text", text: heading_text } },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: formattedOptions.join("\n"),
-          },
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `Choose with, e.g., \`${verb} 1, 2, 3\``,
-          },
-        },
-      ],
-    });
-
-    const result = messages
-      .where((e) => from_filter(e.user))
-      .where((e) => {
-        return (
-          e.text &&
-          e.text.toLowerCase().match(new RegExp(`^${verb.toLowerCase()}`))
-        );
-      })
-      .map((e) => {
-        const selection = [
-          ...new Set(
-            (e.text.match(/\d+/g) || [])
-              .map(Number)
-              .filter((x) => x >= 0 && x < options.length),
-          ),
-        ];
-
-        if (selection.length < minimum || selection.length > maximum) {
-          const message =
-            minimum === maximum
-              ? `exactly ${minimum} options`
-              : `between ${minimum} and ${maximum} options`;
-          sendMessage({
-            channel: channel_id,
-            text: `You must choose ${message}.`,
-          });
-        } else {
-          const selectedOptions = selection.map((idx) => options[idx as number]);
-          sendMessage({
-            channel: channel_id,
-            text: `You chose ${selectedOptions}`,
-          });
-
-          return selection;
+    const done = new Promise((resolve) => {
+      this.app.action(
+        { action_id: checkbox_id},
+        async (request) => {
+          request.ack();
+          selected_options = (request.action as CheckboxesAction).selected_options.map (x => x.value)
         }
-      })
-      .where((x) => !!x)
-      .take(1);
+      );
+
+      this.app.action(
+        { action_id: submit_id},
+        async (request) => {
+          const {body, client, ack, logger, payload} = request;
+          const say = (request as any).say;
+          ack();
+
+          if(selected_options.length < minimum ||
+             selected_options.length > maximum){
+            if(minimum != maximum) {
+              say(`Choose between ${minimum} and ${maximum} options`);
+            }
+            else {
+              say(`Choose ${minimum} options`);
+            }
+            return;
+          }
+          const selected_indexes = selected_options.map(x => parseInt(x, 10));
+          const selection = selected_indexes.map((idx) => options[idx as number]);
+
+          say(`You chose ${selection.join(", ")}`);
+          resolve(selected_indexes);
+        }
+      );
+
+      const checkboxOptions = options.map(
+        (option, idx) => {
+          return {text: {type: "mrkdwn", text: option}, value: `${idx}`}
+        }
+      );
+
+      this.api.chat.postMessage({
+        channel: channel_id,
+        blocks: [
+          { type: "header", text: { type: "plain_text", text: heading_text } },
+          { type: "actions",
+            elements: [
+              { type: "checkboxes",
+                action_id: checkbox_id,
+                options: checkboxOptions
+              }
+            ]
+          },
+          { type: "actions",
+            elements: [
+              { type: "button",
+                action_id: submit_id,
+                text: {type: "plain_text", text: verb}
+              }
+            ]
+          }
+        ]
+      });
+
+    });
+
+    const result = await done;
 
     return result;
   }
@@ -107,6 +108,7 @@ export class Avalon {
   playerDms: any;
   gameUx: GameUILayer;
   api: webApi.WebClient;
+  bolt: App;
   messages: any;
   date: any;
   scheduler: any;
@@ -236,11 +238,12 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(api, messages, channel, players, scheduler) {
+  constructor(api, bolt, messages, channel, players, scheduler) {
     scheduler = scheduler || rx.Scheduler.timeout;
     this.api = api;
+    this.bolt = bolt;
     this.messages = messages;
-    this.gameUx = new GameUILayer(this.api, messages);
+    this.gameUx = new GameUILayer(this.api, this.bolt);
 
     this.channel = channel;
     this.players = players.map((id) => {
@@ -539,13 +542,13 @@ export class Avalon {
       this.playerDms[player.id],
       `Choose a team of ${questAssign.n}`,
       this.players.map((player) => M.formatAtUser(player)),
-      "nominate",
+      "Nominate",
       (user_id) => user_id === player.id,
       questAssign.n,
       questAssign.n,
     );
 
-    return playerChoice
+    return rx.Observable.fromPromise(playerChoice)
       .map((idx) => idx.map((i) => this.players[i]))
       .concatMap((questPlayers) => {
         this.questPlayers = questPlayers;
@@ -843,14 +846,14 @@ export class Avalon {
                 this.playerDms[assassin.id],
                 `Choose who to kill`,
                 killablePlayers.map((player) => M.formatAtUser(player)),
-                "kill",
+                "Kill",
                 (user_id) => user_id === assassin.id,
                 1,
                 1,
               );
 
               return rx.Observable.return(true).flatMap(() => {
-                return playerChoice
+                return rx.Observable.fromPromise(playerChoice)
                   .map((idx) => killablePlayers[idx[0]])
                   .do((accused) => {
                     if (accused.role != "merlin") {

@@ -342,7 +342,7 @@ export class Bot {
       channel: channel.id,
     });
 
-    let game = (this.game = new Avalon(this.api, messages, channel, players));
+    let game = (this.game = new Avalon(this.api, this.bolt, messages, channel, players));
     _.extend(game, this.gameConfig);
 
     // TODO allow quitting again
