@@ -555,7 +555,6 @@ export class Avalon {
         let message = `${M.formatAtUser(player.id)} is sending ${M.pp(
           questPlayers,
         )} to the ${Avalon.ORDER[this.questNumber]} quest.`;
-        this.broadcast(`${message}\nVote in your DMs`, "#555");
         for (let player of this.players) {
           player.action = "voting";
         }
