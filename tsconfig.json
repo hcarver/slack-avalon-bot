@@ -3,7 +3,7 @@
     "moduleResolution": "nodenext",
     "outDir": "./built",
     "allowJs": true,
-    "target": "es6"
+    "target": "esnext"
   },
   "include": ["./src/**/*"]
 }

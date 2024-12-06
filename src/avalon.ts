@@ -535,6 +535,84 @@ export class Avalon {
     });
   }
 
+  voteForQuestMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
+    let message = `${M.formatAtUser(sendingPlayerId)} is sending ${M.pp(
+      questingPlayerIds,
+    )} to the ${Avalon.ORDER[questNumber]} quest.`;
+
+    const usersByVoteStatus = Object.groupBy(this.players, ({id}) => (approving_players.map(x=>x.id).includes(id) || rejecting_players.map(x => x.id).includes(id)).toString())
+
+    const voting_update = (usersByVoteStatus["true"] || []).length === 0 ?
+      "No one's voted yet." :
+      `${M.pp(usersByVoteStatus["true"])} voted.` +
+      (!!usersByVoteStatus["false"] ?
+       ` Still waiting on ${M.pp(usersByVoteStatus["false"])}.`:
+       "");
+
+    if(approving_players.map(x => x.id).includes(to_player.id) || rejecting_players.map(x => x.id).includes(to_player.id)) {
+      return {
+        channel: this.playerDms[to_player.id],
+        text: `${message}\n${voting_update}.`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `${message}\n${voting_update}.`
+            },
+          },
+        ]
+      }
+    }
+
+    return {
+      channel: this.playerDms[to_player.id],
+      text: `${message}\n${voting_update}\nVote with \`approve\` or \`reject\``,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: message,
+          },
+        },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: voting_update,
+          },
+        },
+        {
+          type: "actions",
+          block_id: "quest-team-vote",
+          elements: [
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: ":white_check_mark: Approve",
+                emoji: true,
+              },
+              value: "approve",
+              action_id: "approve",
+            },
+            {
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: ":x: Reject",
+                emoji: true,
+              },
+              value: "reject",
+              action_id: "reject",
+            },
+          ],
+        },
+      ],
+    }
+  }
+
   choosePlayersForQuest(player) {
     let questAssign = this.questAssign();
 
@@ -549,93 +627,66 @@ export class Avalon {
     );
 
     return rx.Observable.fromPromise(playerChoice)
-      .map((idx) => idx.map((i) => this.players[i]))
-      .concatMap((questPlayers) => {
-        this.questPlayers = questPlayers;
-        let message = `${M.formatAtUser(player.id)} is sending ${M.pp(
-          questPlayers,
-        )} to the ${Avalon.ORDER[this.questNumber]} quest.`;
-        for (let player of this.players) {
-          player.action = "voting";
-        }
+    .map((idx) => idx.map((i) => this.players[i]))
+    .concatMap((questPlayers) => {
+      this.questPlayers = questPlayers;
+      for (let player of this.players) {
+        player.action = "voting";
+      }
+
+      return rx.Observable.forkJoin(
+        this.players.map(p => {
+          const posted_message = this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p))
+
+          return new Promise(resolve => posted_message.then(resp => resolve([p.id, resp.ts])))
+        })
+      )
+      .first()
+      .flatMap(messages => {
+        const player_messages = new Map(messages)
+
         return rx.Observable.fromArray(this.players)
-          .map((p) => {
-            this.api.chat.postMessage({
-              channel: this.playerDms[p.id],
-              text: `${message}\nVote with \`approve\` or \`reject\``,
-              blocks: [
-                {
-                  type: "section",
-                  text: {
-                    type: "mrkdwn",
-                    text: message,
-                  },
-                },
-                {
-                  type: "actions",
-                  block_id: "quest-team-vote",
-                  elements: [
-                    {
-                      type: "button",
-                      text: {
-                        type: "plain_text",
-                        text: ":white_check_mark: Approve",
-                        emoji: true,
-                      },
-                      value: "approve",
-                      action_id: "approve",
-                    },
-                    {
-                      type: "button",
-                      text: {
-                        type: "plain_text",
-                        text: ":x: Reject",
-                        emoji: true,
-                      },
-                      value: "reject",
-                      action_id: "reject",
-                    },
-                  ],
-                },
-              ],
-            });
-            return this.dmMessages(p)
-              .where((e) => e.user === p.id && e.text)
-              .map((e) => e.text.trim().toLowerCase())
-              .where(
-                (text) =>
-                  text.score("approve", 0.5) > 0.5 ||
-                  text.score("reject", 0.5) > 0.5,
-              )
-              .map((text) => {
-                return { player: p, approve: text.score("approve", 0.5) > 0.5 };
-              })
-              .take(1);
+        .map((p) => {
+
+          return this.dmMessages(p)
+          .where((e) => e.user === p.id && e.text)
+          .map((e) => e.text.trim().toLowerCase())
+          .where(
+            (text) =>
+            text.score("approve", 0.5) > 0.5 ||
+              text.score("reject", 0.5) > 0.5,
+          )
+          .map((text) => {
+            return { player: p, approve: text.score("approve", 0.5) > 0.5 };
           })
-          .mergeAll();
+          .take(1);
+        })
+        .mergeAll()
+        .take(this.players.length)
+        .reduce(
+          (acc, vote) => {
+            // TODO: bufferWithTime on this
+            if (vote.approve) {
+              acc.approved.push(vote.player);
+            } else {
+              acc.rejected.push(vote.player);
+            }
+            if (acc.approved.length + acc.rejected.length < this.players.length) {
+              let voted = acc.approved.concat(acc.rejected);
+              let remaining = this.players.length - voted.length;
+
+              this.players.map(p => {
+                let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p, acc.approved, acc.rejected)
+
+                this.api.chat.update({...updated_version, ts: player_messages.get(p.id) as string})
+              })
+            }
+            return acc;
+          },
+          { approved: [], rejected: [] },
+        );
       })
-      .take(this.players.length)
-      .reduce(
-        (acc, vote) => {
-          // TODO: bufferWithTime on this
-          if (vote.approve) {
-            acc.approved.push(vote.player);
-          } else {
-            acc.rejected.push(vote.player);
-          }
-          if (acc.approved.length + acc.rejected.length < this.players.length) {
-            let voted = acc.approved.concat(acc.rejected);
-            let remaining = this.players.length - voted.length;
-            this.broadcast(
-              `${M.formatAtUser(vote.player.id)} voted! ${remaining} vote${
-                remaining > 1 ? "s" : ""
-              } left.`,
-            );
-          }
-          return acc;
-        },
-        { approved: [], rejected: [] },
-      );
+    })
   }
 
   getStatus(current) {
