@@ -486,13 +486,10 @@ export class Avalon {
         )} will choose${message} (in DM)`;
 
         this.broadcast(full_message, "#a60", special);
-        player.action = "sending";
 
         return this.choosePlayersForQuest(player).concatMap((votes) => {
           let printQuesters = M.pp(this.questPlayers);
-          for (let player of this.players) {
-            player.action = null;
-          }
+
           if (votes.approved.length > votes.rejected.length) {
             this.broadcast(
               `The ${
@@ -630,9 +627,6 @@ export class Avalon {
     .map((idx) => idx.map((i) => this.players[i]))
     .concatMap((questPlayers) => {
       this.questPlayers = questPlayers;
-      for (let player of this.players) {
-        player.action = "voting";
-      }
 
       return rx.Observable.forkJoin(
         this.players.map(p => {
@@ -735,9 +729,6 @@ export class Avalon {
       `${message}\nQuesting players can cast their votes in their DMs.`,
       "#ea0",
     );
-    for (let player of questPlayers) {
-      player.action = "questing";
-    }
 
     let runners = 0;
     return rx.Observable.fromArray(questPlayers)
@@ -816,9 +807,6 @@ export class Avalon {
         { succeeded: [], failed: [] },
       )
       .map((questResults) => {
-        for (let player of questPlayers) {
-          player.action = null;
-        }
         let questAssign = this.questAssign();
         if (questResults.failed.length > 0) {
           if (questResults.failed.length < questAssign.f) {
@@ -880,7 +868,6 @@ export class Avalon {
           );
           return rx.Observable.defer(() => {
             return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
-              assassin.action = "killing";
               this.broadcast(
                 `*${M.formatAtUser(
                   assassin.id,
