@@ -119,7 +119,6 @@ export class Avalon {
   rejectCount;
   progress;
   specialRoles;
-  leader;
   evils;
   assassin;
   subscription;
@@ -267,7 +266,6 @@ export class Avalon {
     let assigns = this.getRoleAssigns(
       Avalon.getAssigns(players.length, this.specialRoles, this.resistance),
     );
-    this.leader = players[0];
 
     let evils = (this.evils = []);
     for (let i = 0; i < players.length; i++) {
@@ -756,7 +754,6 @@ export class Avalon {
       p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
     );
     message += `\nPlayer order: ${order}`;
-    this.leader = leader;
     this.broadcast(
       `${message}\nQuesting players can cast their votes in their DMs.`,
       "#ea0",
