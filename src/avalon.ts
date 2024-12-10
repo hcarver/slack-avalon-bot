@@ -487,19 +487,8 @@ export class Avalon {
 
         this.broadcast(full_message, "#a60", special);
 
-        return this.choosePlayersForQuest(player).concatMap((votes) => {
-          let printQuesters = M.pp(this.questPlayers);
-
-          if (votes.approved.length > votes.rejected.length) {
-            this.broadcast(
-              `The ${
-                Avalon.ORDER[this.questNumber]
-              } quest with ${printQuesters} going was approved by ${M.pp(
-                votes.approved,
-              )} (${
-                votes.rejected.length ? M.pp(votes.rejected) : "no one"
-              } rejected)`,
-            );
+        return this.choosePlayersForQuest(player).concatMap((successful) => {
+          if (successful) {
             this.rejectCount = 0;
             return rx.Observable.defer(() =>
               rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
@@ -508,15 +497,6 @@ export class Avalon {
             );
           }
           this.rejectCount++;
-          this.broadcast(
-            `The ${
-              Avalon.ORDER[this.questNumber]
-            } quest with ${printQuesters} going was rejected (${
-              this.rejectCount
-            }) by ${M.pp(votes.rejected)} (${
-              votes.approved.length ? M.pp(votes.approved) : "no one"
-            } approved)`,
-          );
           if (this.rejectCount >= 5) {
             this.endGame(
               `:red_circle: Minions of Mordred win due to the ${
@@ -532,19 +512,61 @@ export class Avalon {
     });
   }
 
-  voteForQuestMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
-    let message = `${M.formatAtUser(sendingPlayerId)} is sending ${M.pp(
+  questHistoryMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
+    let message = `${M.formatAtUser(sendingPlayerId)} nominated ${M.pp(
       questingPlayerIds,
-    )} to the ${Avalon.ORDER[questNumber]} quest.`;
+    )} for the ${Avalon.ORDER[questNumber]} quest.`;
+
+    const voting_summary = approving_players.length > 0
+    ? (
+      rejecting_players.length > 0
+      ? `approved by ${M.pp(approving_players)}, rejected by ${M.pp(rejecting_players)}`
+      : "everyone accepted the team"
+    )
+    : "everyone rejected the team"
+
+    const voting_update =
+      approving_players.length > rejecting_players.length
+        ?  `Team accepted (${voting_summary}).`
+        : `Team rejected (${voting_summary}).`
+
+    return {
+      channel: this.playerDms[to_player.id],
+      text: `${message}\n${voting_update}`,
+      blocks: [
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: `${message}\n${voting_update}`
+          },
+        },
+      ]
+    }
+  }
+
+  voteForQuestMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
+    let message = `${M.formatAtUser(sendingPlayerId)} is nominating ${M.pp(
+      questingPlayerIds,
+    )} for the ${Avalon.ORDER[questNumber]} quest.`;
 
     const usersByVoteStatus = Object.groupBy(this.players, ({id}) => (approving_players.map(x=>x.id).includes(id) || rejecting_players.map(x => x.id).includes(id)).toString())
 
-    const voting_update = (usersByVoteStatus["true"] || []).length === 0 ?
+    let voting_update = (usersByVoteStatus["true"] || []).length === 0 ?
       "No one's voted yet." :
       `${M.pp(usersByVoteStatus["true"])} voted.` +
       (!!usersByVoteStatus["false"] ?
        ` Still waiting on ${M.pp(usersByVoteStatus["false"])}.`:
        "");
+
+    if(approving_players.length + rejecting_players.length === this.players.length) {
+      if(approving_players.length > rejecting_players.length) {
+        voting_update = `Team accepted (approved by ${M.pp(approving_players)}, rejected by ${M.pp(rejecting_players)}.`
+      }
+      else {
+        voting_update = `Team rejected (approved by ${M.pp(approving_players)}, rejected by ${M.pp(rejecting_players)}.`
+      }
+    }
 
     if(approving_players.map(x => x.id).includes(to_player.id) || rejecting_players.map(x => x.id).includes(to_player.id)) {
       return {
@@ -678,7 +700,17 @@ export class Avalon {
             return acc;
           },
           { approved: [], rejected: [] },
-        );
+        ).map(({approved, rejected}) => {
+          const successful = approved.length > rejected.length;
+
+          this.players.map(p => {
+            let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questNumber, p, approved, rejected)
+
+            this.api.chat.update({...updated_version, ts: player_messages.get(p.id) as string})
+          })
+
+          return successful
+        }) ;
       })
     })
   }
