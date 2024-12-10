@@ -569,13 +569,13 @@ export class Avalon {
     if(approving_players.map(x => x.id).includes(to_player.id) || rejecting_players.map(x => x.id).includes(to_player.id)) {
       return {
         channel: this.playerDms[to_player.id],
-        text: `${message}\n${voting_update}.`,
+        text: `${message}\n${voting_update}`,
         blocks: [
           {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: `${message}\n${voting_update}.`
+              text: `${message}\n${voting_update}`
             },
           },
         ]
