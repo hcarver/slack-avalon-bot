@@ -481,7 +481,7 @@ export class Avalon {
 
         const full_message = `${status}${M.formatAtUser(
           player.id,
-        )} will choose${message} (in DM)`;
+        )} will choose${message} (attempt number ${this.rejectCount + 1})`;
 
         this.broadcast(full_message, "#a60", special);
 
@@ -546,7 +546,7 @@ export class Avalon {
   voteForQuestMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
     let message = `${M.formatAtUser(sendingPlayerId)} is nominating ${M.pp(
       questingPlayerIds,
-    )} for the ${Avalon.ORDER[questNumber]} quest.`;
+    )} for the ${Avalon.ORDER[questNumber]} quest (attempt number ${this.rejectCount + 1}).`;
 
     const usersByVoteStatus = Object.groupBy(this.players, ({id}) => (approving_players.map(x=>x.id).includes(id) || rejecting_players.map(x => x.id).includes(id)).toString())
 
@@ -745,7 +745,7 @@ export class Avalon {
     return status.join(",");
   }
 
-  runQuest(questPlayers, leader) {
+  composeQuestMessage(player, questPlayers, leader, playerIdsWhoHaveQuested=[]) {
     let message = `${M.pp(questPlayers)} are going on the ${
       Avalon.ORDER[this.questNumber]
     } quest.`;
@@ -754,209 +754,233 @@ export class Avalon {
       p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
     );
     message += `\nPlayer order: ${order}`;
-    this.broadcast(
-      `${message}\nQuesting players can cast their votes in their DMs.`,
-      "#ea0",
-    );
 
-    let runners = 0;
-    return rx.Observable.fromArray(questPlayers)
-      .map((player) => {
-        this.api.chat.postMessage({
-          channel: this.playerDms[player.id],
-          text: `${message}\nShould the quest \`succeed\` or \`fail\`?`,
-          blocks: [
+    const summary_blocks = []
+    if(questPlayers.length > playerIdsWhoHaveQuested.length) {
+      const still_waiting_on = `Waiting for players: ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.id)))}.`
+
+      summary_blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: still_waiting_on
+        }
+      })
+    }
+
+    const action_blocks = []
+    if(questPlayers.map(x => x.id).includes(player.id) && !playerIdsWhoHaveQuested.includes(player.id)) {
+      action_blocks.push(
+        {
+          type: "actions",
+          block_id: "quest-success-vote",
+          elements: [
             {
-              type: "section",
+              type: "button",
               text: {
-                type: "mrkdwn",
-                text: message,
+                type: "plain_text",
+                text: ":white_check_mark: Succeed",
+                emoji: true,
               },
+              value: "succeed",
+              action_id: "succeed",
             },
             {
-              type: "actions",
-              block_id: "quest-success-vote",
-              elements: [
-                {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: ":white_check_mark: Succeed",
-                    emoji: true,
-                  },
-                  value: "succeed",
-                  action_id: "succeed",
-                },
-                {
-                  type: "button",
-                  text: {
-                    type: "plain_text",
-                    text: ":x: Fail",
-                    emoji: true,
-                  },
-                  value: "fail",
-                  action_id: "fail",
-                },
-              ],
+              type: "button",
+              text: {
+                type: "plain_text",
+                text: ":x: Fail",
+                emoji: true,
+              },
+              value: "fail",
+              action_id: "fail",
             },
           ],
-        });
-        return this.dmMessages(player)
-          .where((e) => e.user === player.id && e.text)
-          .map((e) => e.text.trim().toLowerCase())
-          .where(
-            (text) =>
-              text.score("succeed", 0.5) > 0.5 || text.score("fail", 0.5) > 0.5,
-          )
-          .map((text) => {
-            return { player: player, fail: text.score("fail", 0.5) > 0.5 };
-          })
-          .take(1);
-      })
-      .mergeAll()
-      .take(questPlayers.length)
-      .reduce(
-        (acc, questResult) => {
-          if (questResult.fail) {
-            acc.failed.push(questResult.player);
-          } else {
-            acc.succeeded.push(questResult.player);
-          }
-          if (acc.failed.length + acc.succeeded.length < questPlayers.length) {
-            let completed = acc.failed.concat(acc.succeeded);
-            let remaining = questPlayers.length - completed.length;
-            this.broadcast(
-              `${M.formatAtUser(
-                questResult.player.id,
-              )} completed the quest! ${remaining} remaining...`,
-            );
-          }
-          return acc;
-        },
-        { succeeded: [], failed: [] },
+        }
       )
-      .map((questResults) => {
-        let questAssign = this.questAssign();
-        if (questResults.failed.length > 0) {
-          if (questResults.failed.length < questAssign.f) {
-            this.progress.push("good");
-            this.broadcast(
-              `${M.pp(questPlayers)} succeeded the ${
-                Avalon.ORDER[this.questNumber]
-              } quest with ${questResults.failed.length} fail!`,
-              "#08e",
-            );
-          } else {
-            this.progress.push("bad");
-            this.broadcast(
-              `${questResults.failed.length} in (${M.pp(
-                questPlayers,
-              )}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
-              "#e00",
-            );
-          }
-        } else {
-          this.progress.push("good");
-          this.broadcast(
-            `${M.pp(questPlayers)} succeeded the ${
-              Avalon.ORDER[this.questNumber]
-            } quest!`,
-            "#08e",
-          );
+    }
+
+    return {
+      channel: this.playerDms[player.id],
+      blocks: [{
+        type: "section",
+        text: {
+            type: "mrkdwn",
+            text: message
         }
-        this.questNumber++;
-        let score = { good: 0, bad: 0 };
-        for (let res of this.progress) {
-          score[res]++;
-        }
-        return score;
+      },
+      ...summary_blocks,
+      ...action_blocks]
+    }
+  }
+
+  runQuest(questPlayers, leader) {
+    return rx.Observable.forkJoin(
+      this.players.map(p => {
+        const message = this.composeQuestMessage(p, questPlayers, leader)
+        const posted_message = this.api.chat.postMessage(message)
+        return new Promise(resolve => posted_message.then(resp => resolve([p.id, resp.ts])))
       })
-      .concatMap((score) => {
-        if (score.bad == 3) {
-          this.endGame(
-            `:red_circle: Minions of Mordred win by failing 3 quests!`,
-            "#e00",
-            false
-          );
-        } else if (score.good == 3) {
-          let merlin = this.players.filter((player) => player.role == "merlin");
-          if (!merlin.length) {
-            this.endGame(
-              `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
-              "#08e",
-              false
-            );
-            return rx.Observable.return(true);
-          }
-          let assassin = this.assassin;
-          merlin = merlin[0];
+    )
+      .flatMap(messages => {
+        const player_messages = new Map(messages)
+        let runners = 0;
+        return rx.Observable.fromArray(questPlayers)
+          .map((player) => {
+            return this.dmMessages(player)
+              .where((e) => e.user === player.id && e.text)
+              .map((e) => e.text.trim().toLowerCase())
+              .where(
+                (text) =>
+                  text.score("succeed", 0.5) > 0.5 || text.score("fail", 0.5) > 0.5,
+              )
+              .map((text) => {
+                return { player: player, fail: text.score("fail", 0.5) > 0.5 };
+              })
+              .take(1);
+          })
+          .mergeAll()
+          .take(questPlayers.length)
+          .reduce(
+            (acc, questResult) => {
+              if (questResult.fail) {
+                acc.failed.push(questResult.player);
+              } else {
+                acc.succeeded.push(questResult.player);
+              }
 
-          let status = `Quest Results: ${this.getStatus(false)}\n`;
-          this.broadcast(
-            `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
-          );
-          return rx.Observable.defer(() => {
-            return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
+              this.players.map(p => {
+                const message = this.composeQuestMessage(p, questPlayers, leader, [...acc.failed.map(x => x.id), ...acc.succeeded.map(x => x.id)]);
+                this.api.chat.update({...message, ts: player_messages.get(p.id) as string})
+              })
+
+              return acc;
+            },
+            { succeeded: [], failed: [] },
+          )
+          .map((questResults) => {
+            let questAssign = this.questAssign();
+            if (questResults.failed.length > 0) {
+              if (questResults.failed.length < questAssign.f) {
+                this.progress.push("good");
+                this.broadcast(
+                  `${M.pp(questPlayers)} succeeded the ${
+                    Avalon.ORDER[this.questNumber]
+                  } quest with ${questResults.failed.length} fail!`,
+                  "#08e",
+                );
+              } else {
+                this.progress.push("bad");
+                this.broadcast(
+                  `${questResults.failed.length} in (${M.pp(
+                    questPlayers,
+                  )}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
+                  "#e00",
+                );
+              }
+            } else {
+              this.progress.push("good");
               this.broadcast(
-                `*${M.formatAtUser(
-                  assassin.id,
-                )}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN (via DM)`,
+                `${M.pp(questPlayers)} succeeded the ${
+                  Avalon.ORDER[this.questNumber]
+                } quest!`,
+                "#08e",
+              );
+            }
+            this.questNumber++;
+            let score = { good: 0, bad: 0 };
+            for (let res of this.progress) {
+              score[res]++;
+            }
+            return score;
+          })
+      })
+          .concatMap((score) => {
+            if (score.bad == 3) {
+              this.endGame(
+                `:red_circle: Minions of Mordred win by failing 3 quests!`,
                 "#e00",
+                false
               );
+            } else if (score.good == 3) {
+              let merlin = this.players.filter((player) => player.role == "merlin");
+              if (!merlin.length) {
+                this.endGame(
+                  `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
+                  "#08e",
+                  false
+                );
+                return rx.Observable.return(true);
+              }
+              let assassin = this.assassin;
+              merlin = merlin[0];
 
-              const killablePlayers = this.players.filter(
-                (p) => p.id !== assassin.id,
+              let status = `Quest Results: ${this.getStatus(false)}\n`;
+              this.broadcast(
+                `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
               );
+              return rx.Observable.defer(() => {
+                return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
+                  this.broadcast(
+                    `*${M.formatAtUser(
+                      assassin.id,
+                    )}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN.`,
+                    "#e00",
+                  );
 
-              const playerChoice = this.gameUx.pollForDecision(
-                this.playerDms[assassin.id],
-                `Choose who to kill`,
-                killablePlayers.map((player) => M.formatAtUser(player)),
-                "Kill",
-                (user_id) => user_id === assassin.id,
-                1,
-                1,
-              );
+                  const killablePlayers = this.players.filter(
+                    (p) => p.id !== assassin.id,
+                  );
 
-              return rx.Observable.return(true).flatMap(() => {
-                return rx.Observable.fromPromise(playerChoice)
-                  .map((idx) => killablePlayers[idx[0]])
-                  .do((accused) => {
-                    if (accused.role != "merlin") {
-                      this.broadcast(
-                        `${status}:crossed_swords:${M.formatAtUser(
-                          assassin.id,
-                        )} chose ${M.formatAtUser(
-                          accused.id,
-                        )} as MERLIN, not :angel:${M.formatAtUser(
-                          merlin.id,
-                        )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
-                          true,
-                        )}`,
-                        "#08e",
-                        "end",
-                      );
-                    } else {
-                      this.broadcast(
-                        `${status}:crossed_swords:${M.formatAtUser(
-                          assassin.id,
-                        )} chose :angel:${M.formatAtUser(
-                          accused.id,
-                        )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
-                          true,
-                        )}`,
-                        "#e00",
-                        "end",
-                      );
-                    }
-                    this.quit();
+                  const playerChoice = this.gameUx.pollForDecision(
+                    this.playerDms[assassin.id],
+                    `Choose who to kill`,
+                    killablePlayers.map((player) => M.formatAtUser(player)),
+                    "Kill",
+                    (user_id) => user_id === assassin.id,
+                    1,
+                    1,
+                  );
+
+                  return rx.Observable.return(true).flatMap(() => {
+                    return rx.Observable.fromPromise(playerChoice)
+                      .map((idx) => killablePlayers[idx[0]])
+                      .do((accused) => {
+                        if (accused.role != "merlin") {
+                          this.broadcast(
+                            `${status}:crossed_swords:${M.formatAtUser(
+                              assassin.id,
+                            )} chose ${M.formatAtUser(
+                              accused.id,
+                            )} as MERLIN, not :angel:${M.formatAtUser(
+                              merlin.id,
+                            )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
+                              true,
+                            )}`,
+                            "#08e",
+                            "end",
+                          );
+                        } else {
+                          this.broadcast(
+                            `${status}:crossed_swords:${M.formatAtUser(
+                              assassin.id,
+                            )} chose :angel:${M.formatAtUser(
+                              accused.id,
+                            )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
+                              true,
+                            )}`,
+                            "#e00",
+                            "end",
+                          );
+                        }
+                        this.quit();
+                      });
                   });
+                });
               });
-            });
+            }
+            return rx.Observable.return(true);
           });
-        }
-        return rx.Observable.return(true);
-      });
   }
 }
 
