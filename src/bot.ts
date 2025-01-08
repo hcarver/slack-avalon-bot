@@ -14,7 +14,6 @@ export class Bot {
   isPolling: boolean;
   api: any;
   gameConfig: any;
-  gameConfigParams: any;
   game: any;
   bolt: App;
 
@@ -37,7 +36,6 @@ export class Bot {
     this.api = this.bolt.client;
 
     this.gameConfig = Avalon.DEFAULT_CONFIG;
-    this.gameConfigParams = ["timeout", "mode"];
   }
 
   // Public: Brings this bot online and starts handling messages sent to it.
@@ -99,20 +97,6 @@ export class Bot {
     let disp = new rx.CompositeDisposable();
 
     disp.add(this.handleStartGameMessages(messages));
-  }
-
-  includeRole(role) {
-    this.excludeRole(role);
-    this.gameConfig.specialRoles.push(role);
-  }
-
-  excludeRole(role) {
-    let index = this.gameConfig.specialRoles.indexOf(role);
-    if (index >= 0) {
-      this.gameConfig.specialRoles.splice(index, 1);
-      return true;
-    }
-    return false;
   }
 
   // Private: Looks for messages directed at the bot that contain the word
