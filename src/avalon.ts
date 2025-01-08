@@ -39,9 +39,8 @@ export class Avalon {
 
   static DEFAULT_CONFIG = {
     resistance: false,
-    lady: false,
     order: "turn",
-    specialRoles: ["merlin", "percival", "morgana"],
+    specialRoles: ["merlin"],
   };
 
   static ROLES = {
@@ -210,10 +209,14 @@ export class Avalon {
         if (merlins.length == 1) {
           message += `. ${M.formatAtUser(merlins[0].id)} is MERLIN`;
         } else if (merlins.length > 1) {
-          message += `. One of ${M.pp(merlins)} is MERLIN`;
+          message += `. One of ${M.pp(merlins)} is MERLIN, the other is MORGANA.`;
         }
       } else if (player.role != "good" && player.role != "oberon") {
-        message += `. ${M.pp(knownEvils)} are evil`;
+        if (knownEvils.length == evils.length) {
+          message += `. ${M.pp(knownEvils)} are evil`;
+        } else {
+          message += `. ${M.pp(knownEvils)} are evil. OBERON is unknown to you.`;
+        }
       }
 
       this.api.chat.postMessage({

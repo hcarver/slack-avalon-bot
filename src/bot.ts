@@ -323,14 +323,62 @@ export class Bot {
       return rx.Observable.empty();
     }
 
+    const configuringPlayer = players[0];
+
     this.bolt.client.chat.postMessage({
-      text: `Starting game now. Check your DMs!`,
+      text: `${M.formatAtUser(configuringPlayer)} will now choose the roles in play for this game.`,
       channel: channel.id,
     });
 
+    const configurableRoles = [
+      "oberon",
+      "morgana",
+      "mordred",
+      "percival",
+    ]
+
     const gameUx = new GameUILayer(this.api, this.bolt);
-    let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
-    _.extend(game, this.gameConfig);
+
+    const roleChoice = gameUx.pollForDecision(
+      configuringPlayer,
+      `Choose the roles in the game`,
+      configurableRoles.map(role => Avalon.ROLES[role]),
+      "Nominate",
+      (user_id) => user_id === configuringPlayer.id,
+      0,
+      configurableRoles.length,
+    );
+
+    return rx.Observable.fromPromise(roleChoice)
+    .map((role_indexes: [number]) => role_indexes.map(idx => configurableRoles[idx]))
+    .map(role_names => {
+      this.bolt.client.chat.postMessage({
+        text: `${M.formatAtUser(configuringPlayer)} chose:\n\n${role_names.map(name => `${Avalon.ROLES[name]}`).join("\n")}\n\nGame starting now!`,
+        channel: channel.id,
+      })
+
+      role_names.map(role => this.gameConfig.specialRoles.push(role));
+
+      let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
+      _.extend(game, this.gameConfig);
+
+      return game
+    })
+    .map(game => {
+      return SlackApiRx.openDms(this.api, players)
+    })
+    .mergeAll()
+    .flatMap((playerDms) =>
+       {
+         return rx.Observable.timer(2000).flatMap(() => {
+           return this.game.start(playerDms)
+         })
+       }
+    )
+    .do(() => {
+      // quitGameDisp.dispose();
+      this.game = null;
+    });
 
     // TODO allow quitting again
     //    // Listen for messages directed at the bot containing 'quit game.'
@@ -346,15 +394,6 @@ export class Bot {
     //        );
     //        game.endGame(`${M.formatAtUser(player)} has decided to quit the game.`);
     //      });
-
-    return SlackApiRx.openDms(this.api, players)
-      .flatMap((playerDms) =>
-        rx.Observable.timer(2000).flatMap(() => game.start(playerDms)),
-      )
-      .do(() => {
-        // quitGameDisp.dispose();
-        this.game = null;
-      });
   }
 
   // Private: Adds AI-based players (primarily for testing purposes).
