@@ -5,6 +5,8 @@ import { GenericMessageEvent } from "@slack/types";
 import * as rx from "rx";
 import { ActionPayload } from "./action_payloads";
 
+import { GameUILayer } from "./game-ui-layer";
+
 const _ = require("lodash");
 const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");
@@ -326,7 +328,8 @@ export class Bot {
       channel: channel.id,
     });
 
-    let game = (this.game = new Avalon(this.api, this.bolt, messages, channel, players));
+    const gameUx = new GameUILayer(this.api, this.bolt);
+    let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
     _.extend(game, this.gameConfig);
 
     // TODO allow quitting again
