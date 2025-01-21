@@ -37,7 +37,7 @@ export class Bot {
     // });
     this.api = this.bolt.client;
 
-    this.gameConfig = Avalon.DEFAULT_CONFIG;
+    this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
   }
 
   // Public: Brings this bot online and starts handling messages sent to it.
