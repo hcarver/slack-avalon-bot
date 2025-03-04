@@ -9,6 +9,25 @@ export class GameUILayer {
     this.app = app;
   }
 
+  async send_message(
+    channel_id,
+    heading_text,
+    extra_blocks
+  ) {
+    let blocks = [...extra_blocks]
+
+    if(heading_text) {
+      blocks.unshift(
+        { type: "header", text: { type: "plain_text", text: heading_text } },
+      )
+    }
+
+    this.api.chat.postMessage({
+      channel: channel_id,
+      blocks: blocks
+    });
+  }
+
   async pollForDecision(
     channel_id,
     heading_text,

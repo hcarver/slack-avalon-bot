@@ -185,44 +185,80 @@ export class Avalon {
         evils.push(player);
       }
     }
+
     if (!this.resistance) {
       this.assassin = this.getAssassin();
     }
 
+    const presentRoles = players.map(p => p.role);
+
+    let specialRoles = Object.keys(Avalon.ROLES)
+    .filter((role) => presentRoles.indexOf(role) >= 0)
+    .map((role) => {
+      switch (role) {
+        case "merlin":
+          return ":angel: MERLIN";
+        case "percival":
+          return ":cop: PERCIVAL";
+        case "morgana":
+          return ":japanese_ogre: MORGANA";
+        case "mordred":
+          return ":smiling_imp: MORDRED";
+        case "oberon":
+          return ":alien: OBERON";
+      }
+    })
+    .filter((role) => !!role)
+    .join(", ");
+
+    const all_player_blocks = [
+      {type: "markdown", text: `${this.evils.length} out of ${this.players.length} players are evil.`},
+      {type: "markdown", text: `Special roles: ${specialRoles}`}
+    ];
+
     let knownEvils = evils.filter((player) => player.role != "oberon");
     for (let player of this.players) {
       let message = `You are ${Avalon.ROLES[player.role]}`;
+      let extra_info = "";
+
       if (this.assassin.id == player.id && player.role != "assassin") {
-        message += " as well as :crossed_swords: THE ASSASSIN";
+        extra_info += "You are also :crossed_swords: THE ASSASSIN. ";
       }
       if (player.role == "merlin") {
         let evilButMordred = evils.filter((p) => p.role != "mordred");
         if (evilButMordred.length == evils.length) {
-          message += `. ${M.pp(evils)} are evil.`;
+          extra_info = `${M.pp(evils)} are evil.`;
         } else {
-          message += `. ${M.pp(evilButMordred)} are evil. MORDRED is hidden.`;
+          extra_info = `. ${M.pp(evilButMordred)} are evil. MORDRED is hidden.`;
         }
       } else if (player.role == "percival") {
         let merlins = players.filter(
           (p) => p.role == "morgana" || p.role == "merlin",
         );
+
         if (merlins.length == 1) {
-          message += `. ${M.formatAtUser(merlins[0].id)} is MERLIN`;
+          extra_info = `${M.formatAtUser(merlins[0].id)} is MERLIN`;
         } else if (merlins.length > 1) {
-          message += `. One of ${M.pp(merlins)} is MERLIN, the other is MORGANA.`;
+          extra_info = `One of ${M.pp(merlins)} is MERLIN, the other is MORGANA.`;
         }
       } else if (player.role != "good" && player.role != "oberon") {
         if (knownEvils.length == evils.length) {
-          message += `. ${M.pp(knownEvils)} are evil`;
+          extra_info += `${M.pp(knownEvils)} are evil`;
         } else {
-          message += `. ${M.pp(knownEvils)} are evil. OBERON is unknown to you.`;
+          extra_info += `${M.pp(knownEvils)} are evil. OBERON is unknown to you.`;
         }
       }
 
-      this.api.chat.postMessage({
-        text: message,
-        channel: this.playerDms[player.id],
-      });
+      const user_blocks = [...all_player_blocks,
+        { type: "markdown", text: message },
+        { type: "markdown", text: extra_info }
+      ]
+
+      this.gameUx.send_message(
+        this.playerDms[player.id],
+        "Starting Avalon game",
+        user_blocks
+      );
     }
 
     this.subscription = rx.Observable.return(true)
@@ -313,39 +349,7 @@ export class Avalon {
       thumb_url: undefined,
     };
     if (color) attachment.color = color;
-    if (special == "start") {
-      attachment.pretext = `*Start Avalon Game* (${this.date})`;
-      let prependText = `${this.evils.length} out of ${this.players.length} players are evil.`;
-      let specialRoles = this.players.filter(
-        (p) => (p.role != "good" && p.role != "bad") || p.role != "assassin",
-      );
-      if (specialRoles.length) {
-        specialRoles = specialRoles.map((p) => p.role);
-        specialRoles = Object.keys(Avalon.ROLES)
-          .filter((role) => specialRoles.indexOf(role) >= 0)
-          .map((role) => {
-            switch (role) {
-              case "merlin":
-                return ":angel: MERLIN";
-              case "percival":
-                return ":cop: PERCIVAL";
-              case "morgana":
-                return ":japanese_ogre: MORGANA";
-              case "mordred":
-                return ":smiling_imp: MORDRED";
-              case "oberon":
-                return ":alien: OBERON";
-            }
-          })
-          .filter((role) => !!role)
-          .join(", ");
-        attachment.text = `${prependText}\nSpecial roles: ${specialRoles}\n${message}`;
-      } else {
-        attachment.text = `${prependText}\n${message}`;
-      }
-      attachment.thumb_url =
-        "https://cf.geekdo-images.com/images/pic1398895_md.jpg";
-    } else if (special == "end") {
+    if (special == "end") {
       attachment.pretext = `*End Avalon Game* (${this.date})`;
     }
 
@@ -386,14 +390,12 @@ export class Avalon {
             : M.formatAtUser(p.id),
         );
         status += `Player order: ${order}\n`;
-        let special =
-          this.questNumber == 0 && this.rejectCount == 0 ? "start" : "";
 
         const full_message = `${status}${M.formatAtUser(
           player.id,
         )} will choose${message} (attempt number ${this.rejectCount + 1})`;
 
-        this.broadcast(full_message, "#a60", special);
+        this.broadcast(full_message, "#a60", "");
 
         return this.choosePlayersForQuest(player).concatMap((successful) => {
           if (successful) {

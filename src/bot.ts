@@ -285,13 +285,13 @@ export class Bot {
 
           if (players.length > 1 && players.length < Avalon.MAX_PLAYERS) {
             messages.push(
-              `${players.length} players ${M.pp(players)} are in game so far.`,
+              `${players.length} players ${M.pp(players)} are in the game so far.`,
             );
           } else if (players.length == Avalon.MAX_PLAYERS) {
             messages.push(
               `Maximum ${players.length} players ${M.pp(
                 players,
-              )} are in game so far.`,
+              )} are in the game so far.`,
             );
           }
           this.bolt.client.chat.postMessage({
@@ -343,7 +343,7 @@ export class Bot {
       configuringPlayer,
       `Choose the roles in the game`,
       configurableRoles.map(role => Avalon.ROLES[role]),
-      "Nominate",
+      "Choose",
       (user_id) => user_id === configuringPlayer.id,
       0,
       configurableRoles.length,
