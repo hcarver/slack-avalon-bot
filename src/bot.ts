@@ -132,6 +132,7 @@ export class Bot {
             null,
       )
       .where(({ channel, event }) => {
+        this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
         this.gameConfig.resistance = event.text.match(/resistance/i);
         if (this.isPolling) {
           return false;
