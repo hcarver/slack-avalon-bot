@@ -682,32 +682,42 @@ export class Avalon {
 
     const action_blocks = []
     if(questPlayers.map(x => x.id).includes(player.id) && !playerIdsWhoHaveQuested.includes(player.id)) {
+
+      const action_buttons = [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: ":white_check_mark: Succeed",
+            emoji: true,
+          },
+          value: "succeed",
+          action_id: "succeed",
+        }
+      ]
+
+      // Only baddies can fail missions
+      if(!["good", "merlin", "percival"].includes(player.role)) {
+        action_buttons.push(
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: ":x: Fail",
+              emoji: true,
+            },
+            value: "fail",
+            action_id: "fail",
+          }
+        )
+
+      }
+
       action_blocks.push(
         {
           type: "actions",
           block_id: "quest-success-vote",
-          elements: [
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: ":white_check_mark: Succeed",
-                emoji: true,
-              },
-              value: "succeed",
-              action_id: "succeed",
-            },
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: ":x: Fail",
-                emoji: true,
-              },
-              value: "fail",
-              action_id: "fail",
-            },
-          ],
+          elements: action_buttons
         }
       )
     }
