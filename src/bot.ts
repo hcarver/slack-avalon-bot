@@ -340,6 +340,24 @@ export class Bot {
 
     const gameUx = new GameUILayer(this.api, this.bolt);
 
+    const validateValidRoleChoice = chosen_indexes => {
+      const assigns = Avalon.ROLE_ASSIGNS[players.length - Avalon.MIN_PLAYERS]
+
+      const assign_count = assigns.reduce((acc, current) => {
+        acc[current] = (acc[current] || 0) + 1
+        return acc
+      }, {})
+
+      const num_bad = assign_count["bad"]
+
+      const chosen_roles = chosen_indexes.map(index => configurableRoles[index as number])
+      const num_bad_chosen = chosen_roles.filter(x => ["oberon", "morgana", "mordred"].includes(x)).length
+
+      if(num_bad_chosen > num_bad) {
+        return `You can only choose ${num_bad} evil-aligned roles with this player count`
+      }
+    }
+
     const roleChoice = gameUx.pollForDecision(
       configuringPlayer,
       `Choose the roles in the game`,
@@ -348,6 +366,7 @@ export class Bot {
       (user_id) => user_id === configuringPlayer.id,
       0,
       configurableRoles.length,
+      [validateValidRoleChoice]
     );
 
     return rx.Observable.fromPromise(roleChoice)
