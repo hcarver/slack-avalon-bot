@@ -36,6 +36,7 @@ export class GameUILayer {
     from_filter,
     minimum,
     maximum,
+    validators=[]
   ) {
     const checkbox_id = `${(Math.random() + 1).toString(36)}`;
     const submit_id = `${(Math.random() + 1).toString(36)}`;
@@ -57,18 +58,32 @@ export class GameUILayer {
           const say = (request as any).say;
           ack();
 
+          const errors = []
+
           if(selected_options.length < minimum ||
              selected_options.length > maximum){
             if(minimum != maximum) {
-              say(`Choose between ${minimum} and ${maximum} options`);
+              errors.push(`Choose between ${minimum} and ${maximum} options`);
             }
             else {
-              say(`Choose ${minimum} options`);
+              errors.push(`Choose ${minimum} options`);
             }
-            return;
           }
+
           const selected_indexes = selected_options.map(x => parseInt(x, 10));
           const selection = selected_indexes.map((idx) => options[idx as number]);
+
+          for(let validator of validators) {
+            const result = validator(selected_indexes)
+            if(result) {
+              errors.push(result)
+            }
+          }
+
+          if(errors.length > 0) {
+            say(errors.join(" "))
+            return;
+          }
 
           say(`You chose ${selection.join(", ")}`);
           resolve(selected_indexes);
