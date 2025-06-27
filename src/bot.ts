@@ -345,9 +345,9 @@ export class Bot {
   // Returns an {Observable} that signals completion of the game
   startGame(players, messages, channel) {
     if (players.length < Avalon.MIN_PLAYERS) {
-      // TODO: send status back to webpage
+      this.lastPlayerList = players; // Store for potential reopen
       this.bolt.client.chat.postMessage({
-        text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
+        text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players. Use 'reopen' to recruit more players.`,
         channel: channel.id,
       });
       return rx.Observable.empty();
