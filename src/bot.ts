@@ -20,7 +20,6 @@ export class Bot {
   bolt: App;
   lastPlayerList: string[];
   reopenActive: boolean;
-  activePollingSubject: any;
 
   // Public: Creates a new instance of the bot.
   //
@@ -43,7 +42,6 @@ export class Bot {
     this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
     this.lastPlayerList = [];
     this.reopenActive = false;
-    this.activePollingSubject = null;
   }
 
   // Public: Brings this bot online and starts handling messages sent to it.
@@ -144,7 +142,7 @@ export class Bot {
         const isReopen = event.text.toLowerCase().match(/reopen|re-open/i);
         
         if (isReopen) {
-          // Reopen validation: valid during polling, role selection, or after insufficient players
+          // Reopen validation: valid during role selection or after insufficient players (not during active polling)
           if (this.reopenActive) {
             this.bolt.client.chat.postMessage({
               text: "Reopen already in progress.",
@@ -152,7 +150,7 @@ export class Bot {
             });
             return false;
           }
-          return this.isPolling || (this.game === null);
+          return !this.isPolling && (this.game === null);
         } else {
           // Original "play" command validation
           if (this.isPolling) {
@@ -176,8 +174,8 @@ export class Bot {
           return this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null);
         }
       })
-      .where((starter) => starter && starter.players && starter.channel) // Filter out empty observables
-      .flatMap((starter) => {
+      .where((starter: any) => starter && starter.players && starter.channel) // Filter out empty observables
+      .flatMap((starter: any) => {
         this.isPolling = false;
         this.lastPlayerList = starter.players; // Store player list for potential reopen
         this.addBotPlayers(starter.players);
@@ -464,18 +462,13 @@ export class Bot {
   handleReopenCommand(messages, channel, user) {
     this.reopenActive = true;
     
-    // Scenario 1: During active polling - extend timeout by 30 seconds
-    if (this.isPolling && this.activePollingSubject) {
+    // Scenario 1: During active polling - not supported, user should wait
+    if (this.isPolling) {
       this.bolt.client.chat.postMessage({
-        text: "Polling extended by 30 seconds! Current players can continue joining.",
+        text: "Polling is already active. Please wait for it to complete before using reopen.",
         channel: channel.id,
       });
-      
-      // Extend the current polling window
-      this.activePollingSubject.onNext(30);
       this.reopenActive = false;
-      
-      // Return empty observable as we're not changing the main polling flow
       return rx.Observable.empty();
     }
     
