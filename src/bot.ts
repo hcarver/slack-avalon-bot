@@ -176,6 +176,7 @@ export class Bot {
           return this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null);
         }
       })
+      .where((starter) => starter && starter.players && starter.channel) // Filter out empty observables
       .flatMap((starter) => {
         this.isPolling = false;
         this.lastPlayerList = starter.players; // Store player list for potential reopen
