@@ -428,6 +428,8 @@ export class Bot {
     .do(() => {
       // quitGameDisp.dispose();
       this.game = null;
+      this.lastPlayerList = []; // Clear stored players when game ends
+      this.reopenActive = false; // Reset reopen state
     });
 
     // TODO allow quitting again
