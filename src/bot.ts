@@ -410,6 +410,7 @@ export class Bot {
 
       let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
       _.extend(game, this.gameConfig);
+      this.lastPlayerList = []; // Clear stored players when game starts
 
       return game
     })
