@@ -134,26 +134,48 @@ export class Bot {
       .where(
         ({ channel, event }) =>
           event.text &&
-          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i) !=
+          event.text.toLowerCase().match(/^play (avalon|resistance)|dta|reopen|re-open/i) !=
             null,
       )
       .where(({ channel, event }) => {
         this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
         this.gameConfig.resistance = event.text.match(/resistance/i);
-        if (this.isPolling) {
-          return false;
-        } else if (this.game) {
-          this.bolt.client.chat.postMessage({
-            text: "Another game is in progress, quit that first.",
-            channel: channel.id,
-          });
-          return false;
+        
+        const isReopen = event.text.toLowerCase().match(/reopen|re-open/i);
+        
+        if (isReopen) {
+          // Reopen validation: valid during polling, role selection, or after insufficient players
+          if (this.reopenActive) {
+            this.bolt.client.chat.postMessage({
+              text: "Reopen already in progress.",
+              channel: channel.id,
+            });
+            return false;
+          }
+          return this.isPolling || (this.game === null);
+        } else {
+          // Original "play" command validation
+          if (this.isPolling) {
+            return false;
+          } else if (this.game) {
+            this.bolt.client.chat.postMessage({
+              text: "Another game is in progress, quit that first.",
+              channel: channel.id,
+            });
+            return false;
+          }
+          return true;
         }
-        return true;
       })
-      .flatMap(({ channel, event }) =>
-        this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null),
-      )
+      .flatMap(({ channel, event }) => {
+        const isReopen = event.text.toLowerCase().match(/reopen|re-open/i);
+        
+        if (isReopen) {
+          return this.handleReopenCommand(messages, { id: channel.id }, event.user);
+        } else {
+          return this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null);
+        }
+      })
       .flatMap((starter) => {
         this.isPolling = false;
         this.addBotPlayers(starter.players);
