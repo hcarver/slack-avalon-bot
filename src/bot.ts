@@ -178,6 +178,7 @@ export class Bot {
       })
       .flatMap((starter) => {
         this.isPolling = false;
+        this.lastPlayerList = starter.players; // Store player list for potential reopen
         this.addBotPlayers(starter.players);
 
         return this.startGame(starter.players, messages, starter.channel);
