@@ -18,6 +18,9 @@ export class Bot {
   gameConfig: any;
   game: any;
   bolt: App;
+  lastPlayerList: string[];
+  reopenActive: boolean;
+  activePollingSubject: any;
 
   // Public: Creates a new instance of the bot.
   //
@@ -38,6 +41,9 @@ export class Bot {
     this.api = this.bolt.client;
 
     this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
+    this.lastPlayerList = [];
+    this.reopenActive = false;
+    this.activePollingSubject = null;
   }
 
   // Public: Brings this bot online and starts handling messages sent to it.
