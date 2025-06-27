@@ -150,7 +150,14 @@ export class Bot {
             });
             return false;
           }
-          return !this.isPolling && (this.game === null);
+          else if(this.isPolling){
+             this.bolt.client.chat.postMessage({
+              text: "Polling is already active. Please wait for it to complete before using reopen.",
+              channel: channel.id,
+            });
+           return false
+          }
+          return true
         } else {
           // Original "play" command validation
           if (this.isPolling) {
@@ -174,7 +181,6 @@ export class Bot {
           return this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null);
         }
       })
-      .where((starter: any) => starter && starter.players && starter.channel) // Filter out empty observables
       .flatMap((starter: any) => {
         this.isPolling = false;
         this.lastPlayerList = starter.players; // Store player list for potential reopen
@@ -231,6 +237,8 @@ export class Bot {
     scheduler = scheduler || rx.Scheduler.timeout;
     timeout = timeout || 60;
     this.isPolling = true;
+    this.lastPlayerList = [] //reset last players
+
 
     if (this.gameConfig.resistance) {
       this.bolt.client.chat.postMessage({
@@ -461,17 +469,6 @@ export class Bot {
   // Returns an Observable that emits starter object with players and channel
   handleReopenCommand(messages, channel, user) {
     this.reopenActive = true;
-    
-    // Scenario 1: During active polling - not supported, user should wait
-    if (this.isPolling) {
-      this.bolt.client.chat.postMessage({
-        text: "Polling is already active. Please wait for it to complete before using reopen.",
-        channel: channel.id,
-      });
-      this.reopenActive = false;
-      return rx.Observable.empty();
-    }
-    
     // Scenario 2 & 3: Role selection or after insufficient players
     const existingPlayers = this.lastPlayerList || [];
     return this.restartPollingWithPlayers(messages, channel, user, existingPlayers, 30);
