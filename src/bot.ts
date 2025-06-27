@@ -450,6 +450,152 @@ export class Bot {
   // players - The players participating in the game
   addBotPlayers(players) {}
 
+  // Private: Handles reopen command to extend or restart player polling
+  //
+  // messages - Observable stream of messages
+  // channel - Channel where reopen was requested
+  // user - User who requested reopen
+  //
+  // Returns an Observable that emits starter object with players and channel
+  handleReopenCommand(messages, channel, user) {
+    this.reopenActive = true;
+    
+    // Scenario 1: During active polling - extend timeout by 30 seconds
+    if (this.isPolling && this.activePollingSubject) {
+      this.bolt.client.chat.postMessage({
+        text: "Polling extended by 30 seconds! Current players can continue joining.",
+        channel: channel.id,
+      });
+      
+      // Extend the current polling window
+      this.activePollingSubject.onNext(30);
+      this.reopenActive = false;
+      
+      // Return empty observable as we're not changing the main polling flow
+      return rx.Observable.empty();
+    }
+    
+    // Scenario 2 & 3: Role selection or after insufficient players
+    const existingPlayers = this.lastPlayerList || [];
+    return this.restartPollingWithPlayers(messages, channel, user, existingPlayers, 30);
+  }
+
+  // Private: Restarts polling with existing players and new timeout
+  restartPollingWithPlayers(messages, channel, initiator, existingPlayers, timeout) {
+    this.isPolling = true;
+    
+    const playerCountMsg = existingPlayers.length > 0 
+      ? ` Continuing with ${existingPlayers.length} existing players: ${M.pp(existingPlayers)}.`
+      : '';
+      
+    this.bolt.client.chat.postMessage({
+      text: `Reopening player recruitment for ${timeout} seconds!${playerCountMsg} Respond with *'yes'* to join.`,
+      channel: channel.id,
+    });
+
+    // Use modified polling logic that starts with existing players
+    return this.pollPlayersForGameWithExisting(messages, channel, initiator, existingPlayers, null, timeout)
+      .map((players) => {
+        this.reopenActive = false;
+        return { channel: channel, players: players };
+      });
+  }
+
+  // Private: Modified polling that starts with existing players
+  pollPlayersForGameWithExisting(messages, channel, initiator, existingPlayers, scheduler, timeout) {
+    scheduler = scheduler || rx.Scheduler.timeout;
+    timeout = timeout || 30;
+
+    let formatMessage = (t) =>
+      `Respond with *'yes'* in this channel${M.timer(t)}.`;
+    let timeExpired = this.postMessageWithTimeout(
+      channel,
+      formatMessage,
+      scheduler,
+      timeout,
+    );
+
+    // Look for messages containing the word 'yes' and map them to a unique
+    // user ID, constrained to `maxPlayers` number of players.
+    let pollPlayers = messages
+      .where(
+        (e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i) != null,
+      )
+      .map((e) => e.user);
+    timeExpired.connect();
+
+    let newPlayerStream =
+      rx.Observable.merge(pollPlayers).takeUntil(timeExpired);
+
+    return newPlayerStream
+      .bufferWithTime(300)
+      .reduce((players: string[], newPlayers: string[]) => {
+        if (newPlayers.length) {
+          let messages = [];
+          let joinedAlready = [];
+          newPlayers = newPlayers.filter((player) => {
+            if (players.find((p) => p === player)) {
+              joinedAlready.push(player);
+              return false;
+            }
+            return true;
+          });
+          if (joinedAlready.length) {
+            messages.push(
+              `${M.pp(joinedAlready)} ${
+                joinedAlready.length > 1 ? "are" : "is"
+              } already in the game.`,
+            );
+          }
+          if (players.length + newPlayers.length > Avalon.MAX_PLAYERS) {
+            let excessPlayers = newPlayers.slice(Avalon.MAX_PLAYERS - players.length);
+            newPlayers = newPlayers.slice(0, Avalon.MAX_PLAYERS - players.length);
+            if (newPlayers.length > 0) {
+              messages.push(
+                `${M.pp(newPlayers)} ${
+                  newPlayers.length > 1 ? "have" : "has"
+                } joined the game.`,
+              );
+            }
+            if (excessPlayers.length > 0) {
+              messages.push(
+                `${M.pp(excessPlayers)} cannot join because game is full.`,
+              );
+            }
+          } else if (newPlayers.length) {
+            messages.push(
+              `${M.pp(newPlayers)} ${
+                newPlayers.length > 1 ? "have" : "has"
+              } joined the game.`,
+            );
+          }
+          players.splice(0, 0, ...newPlayers);
+
+          if (players.length > 1 && players.length < Avalon.MAX_PLAYERS) {
+            messages.push(
+              `${players.length} players ${M.pp(players)} are in the game so far.`,
+            );
+          } else if (players.length == Avalon.MAX_PLAYERS) {
+            messages.push(
+              `Maximum ${players.length} players ${M.pp(
+                players,
+              )} are in the game so far.`,
+            );
+          }
+          if (messages.length > 0) {
+            this.bolt.client.chat.postMessage({
+              text: messages.join("\n"),
+              channel: channel.id,
+            });
+          }
+        }
+        return players;
+      }, existingPlayers.slice()) // Start with existing players
+      .map((players) => {
+        return players;
+      });
+  }
+
   welcomeMessage() {
     return `Hi! I can host Avalon games. Type \`play avalon\` to play.`;
   }
