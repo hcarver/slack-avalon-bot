@@ -152,7 +152,7 @@ export class Bot {
         this.isPolling = false;
         this.addBotPlayers(starter.players);
 
-        return this.startGame(starter.players, messages, starter.channel);
+        return rx.Observable.fromPromise(this.startGame(starter.players, messages, starter.channel));
       })
       .subscribe();
   }
@@ -321,7 +321,7 @@ export class Bot {
         text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
         channel: channel.id,
       });
-      return rx.Observable.empty();
+      return Promise.resolve();
     }
 
     const configuringPlayer = players[0];
@@ -369,36 +369,41 @@ export class Bot {
       [validateValidRoleChoice]
     );
 
-    return rx.Observable.fromPromise(roleChoice)
-    .map((role_indexes: [number]) => role_indexes.map(idx => configurableRoles[idx]))
-    .map(role_names => {
+    try {
+      // Wait for role choice
+      const role_indexes = await roleChoice as number[];
+      const role_names = role_indexes.map(idx => configurableRoles[idx]);
+      
+      // Post role selection message
       this.bolt.client.chat.postMessage({
         text: `${M.formatAtUser(configuringPlayer)} chose:\n\n${role_names.map(name => `${Avalon.ROLES[name]}`).join("\n")}\n\nGame starting now!`,
         channel: channel.id,
-      })
+      });
 
-      role_names.map(role => this.gameConfig.specialRoles.push(role));
+      // Add roles to game config
+      role_names.forEach(role => this.gameConfig.specialRoles.push(role));
 
+      // Create and configure game
       let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
       _.extend(game, this.gameConfig);
 
-      return game
-    })
-    .map(game => {
-      return SlackApiRx.openDms(this.api, players)
-    })
-    .mergeAll()
-    .flatMap((playerDms) =>
-       {
-         return rx.Observable.timer(2000).flatMap(() => {
-           return this.game.start(playerDms)
-         })
-       }
-    )
-    .do(() => {
-      // quitGameDisp.dispose();
+      // Open DMs for all players
+      const playerDms = await SlackApiRx.openDms(this.api, players);
+      
+      // Wait 2 seconds then start the game
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Start the game
+      await this.game.start(playerDms);
+      
+      // Clean up
       this.game = null;
-    });
+      
+    } catch (error) {
+      console.error('Error starting game:', error);
+      this.game = null;
+      throw error;
+    }
 
     // TODO allow quitting again
     //    // Listen for messages directed at the bot containing 'quit game.'
