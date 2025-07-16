@@ -146,7 +146,7 @@ export class Bot {
         return true;
       })
       .flatMap(({ channel, event }) =>
-        this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null),
+        this.pollPlayersForGame(messages, { id: channel.id }, null),
       )
       .flatMap((starter) => {
         this.isPolling = false;
@@ -163,33 +163,36 @@ export class Bot {
   // channel - The channel to post in
   // formatMessage - A function that will be invoked once per second with the
   //                 remaining time, and returns the formatted message content
-  // scheduler - The scheduler to use for timing events
   // timeout - The duration of the message, in seconds
   //
-  // Returns an {Observable} sequence that signals expiration of the message
-  postMessageWithTimeout(channel, formatMessage, scheduler, timeout) {
-    const sendMessagePromise = this.bolt.client.chat.postMessage({
+  // Returns a {Promise} that resolves when the timeout expires
+  async postMessageWithTimeout(channel, formatMessage, timeout) {
+    // Send the initial message
+    const payload = await this.bolt.client.chat.postMessage({
       text: formatMessage(timeout),
       channel: channel.id,
     });
 
-    let sendMessage = rx.Observable.fromPromise(sendMessagePromise);
-
-    let timeExpired = sendMessage
-      .flatMap((payload) => {
-        return rx.Observable.timer(0, 1000, scheduler)
-          .take(timeout + 1)
-          .do((x) => {
-            this.api.chat.update({
-              ts: payload.ts,
-              channel: channel.id,
-              text: formatMessage(`${timeout - x}`),
-            });
-          });
-      })
-      .publishLast();
-
-    return timeExpired;
+    // Create a promise that resolves after the timeout
+    return new Promise<void>((resolve) => {
+      let countdown = timeout;
+      
+      // Update the message every second
+      const interval = setInterval(() => {
+        countdown--;
+        
+        this.api.chat.update({
+          ts: payload.ts,
+          channel: channel.id,
+          text: formatMessage(`${countdown}`),
+        });
+        
+        if (countdown <= 0) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 1000);
+    });
   }
 
   // Private: Polls players to join the game, and if we have enough, starts an
@@ -199,9 +202,8 @@ export class Bot {
   // channel - The channel where the deal message was posted
   //
   // Returns an {Observable} that signals completion of the game
-  pollPlayersForGame(messages, channel, initiator, scheduler, timeout) {
-    scheduler = scheduler || rx.Scheduler.timeout;
-    timeout = timeout || 60;
+  pollPlayersForGame(messages, channel, timeout) {
+    timeout = timeout || 45;
     this.isPolling = true;
 
     if (this.gameConfig.resistance) {
@@ -216,20 +218,18 @@ export class Bot {
       });
     }
 
-    // let formatMessage = t => [
-    //   'Respond with:',
-    //   '\t`include percival,morgana,mordred,oberon,lady` to include special roles',
-    //   '\t`add <player1>,<player2>` to add players',
-    //   `\t\`yes\` to join${M.timer(t)}.`
-    // ].join('\n');
     let formatMessage = (t) =>
       `Respond with *'yes'* in this channel${M.timer(t)}.`;
-    let timeExpired = this.postMessageWithTimeout(
+
+    // Create a promise that resolves when the timeout expires
+    const timeoutPromise = this.postMessageWithTimeout(
       channel,
       formatMessage,
-      scheduler,
       timeout,
     );
+
+    // Create an observable that emits when the timeout completes
+    const timeExpired = rx.Observable.fromPromise(timeoutPromise);
 
     // Look for messages containing the word 'yes' and map them to a unique
     // user ID, constrained to `maxPlayers` number of players.
@@ -239,7 +239,6 @@ export class Bot {
       )
       //.where((e) => e.user !== this.self_id) (bot messages excluded by subtype)
       .map((e) => e.user);
-    timeExpired.connect();
 
     let newPlayerStream =
       rx.Observable.merge(pollPlayers).takeUntil(timeExpired);
@@ -313,8 +312,8 @@ export class Bot {
   // messages - An {Observable} representing messages posted to the channel
   // channel - The channel where the game will be played
   //
-  // Returns an {Observable} that signals completion of the game
-  startGame(players, messages, channel) {
+  // Returns a {Promise} that signals completion of the game
+  async startGame(players, messages, channel) {
     if (players.length < Avalon.MIN_PLAYERS) {
       // TODO: send status back to webpage
       this.bolt.client.chat.postMessage({
