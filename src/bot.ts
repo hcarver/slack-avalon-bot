@@ -1,8 +1,6 @@
 "use strict";
 
 import { App } from "@slack/bolt";
-import { GenericMessageEvent } from "@slack/types";
-import { ActionPayload } from "./action_payloads";
 
 import { GameUILayer } from "./game-ui-layer";
 const { v4: uuidv4 } = require('uuid');
