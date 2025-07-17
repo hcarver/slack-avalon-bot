@@ -32,6 +32,7 @@ export class Avalon {
   subscription;
   resistance;
   questPlayers;
+  bolt: any; // Added for message listening
 
   static MIN_PLAYERS = 5;
 
@@ -144,11 +145,11 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(gameUx, api, messages, channel, players, scheduler) {
+  constructor(gameUx, api, bolt, channel, players, scheduler) {
     scheduler = scheduler || rx.Scheduler.timeout;
     this.api = api;
-    this.messages = messages;
     this.gameUx = gameUx;
+    this.bolt = bolt;
 
     this.channel = channel;
     this.players = players.map((id) => {
@@ -157,6 +158,45 @@ export class Avalon {
     this.scheduler = scheduler;
     this.gameEnded = new rx.Subject();
     _.extend(this, Avalon.DEFAULT_CONFIG);
+
+    this.messages = rx.Observable.create((observer) => {
+      // Set up message event handler
+      const messageHandler = async ({ event, client, logger }) => {
+        if (event.subtype === undefined) {
+          observer.onNext(event);
+        }
+      };
+
+      // Set up action event handler for block kit interactions
+      const actionHandler = async (context) => {
+        const { action, body, ack } = context;
+        await ack();
+        const blockPayload = body;
+        const ts = blockPayload.actions[0].action_ts;
+
+        const syntheticMessage = {
+          type: "message",
+          subtype: undefined,
+          channel: blockPayload.channel.id,
+          channel_type: "mpim",
+          user: blockPayload.user.id,
+          ts,
+          event_ts: ts,
+          text: blockPayload.actions[0].value,
+        };
+        observer.onNext(syntheticMessage);
+      };
+
+      // Register event handlers using native Bolt event system
+      this.bolt.event("message", messageHandler);
+      this.bolt.action(
+        { block_id: /quest-team-vote|quest-success-vote/ },
+        actionHandler
+      );
+
+      // No cleanup needed
+      return () => { };
+    });
   }
 
   start(playerDms, timeBetweenRounds) {

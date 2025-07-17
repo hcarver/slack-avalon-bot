@@ -2,7 +2,6 @@
 
 import { App } from "@slack/bolt";
 import { GenericMessageEvent } from "@slack/types";
-import * as rx from "rx";
 import { ActionPayload } from "./action_payloads";
 
 import { GameUILayer } from "./game-ui-layer";
@@ -16,7 +15,7 @@ const Avalon = require("./avalon");
 // Wrapper for Bolt to allow message listener management by UUID
 class BoltWithListeners {
   bolt: App;
-  messageListeners: Map<string, (event: {event?, channel?}) => void>;
+  messageListeners: Map<string, (event: {event?}) => void>;
 
   constructor(bolt: App) {
     this.bolt = bolt;
@@ -37,7 +36,7 @@ class BoltWithListeners {
     return this.bolt.client;
   }
 
-  addMessageListener(fn: (event: {event?, channel?}) => void): string {
+  addMessageListener(fn: (event: {event?}) => void): string {
     const id = uuidv4();
     this.messageListeners.set(id, fn);
     return id;
@@ -112,48 +111,7 @@ export class Bot {
         });
       },
     );
-
-    // Only use rx for messages Observable creation
-    const messages = rx.Observable.create((observer) => {
-      // Set up message event handler
-      const messageHandler = async ({ event, client, logger }) => {
-        if (event.subtype === undefined) {
-          observer.onNext(event);
-        }
-      };
-
-      // Set up action event handler for block kit interactions
-      const actionHandler = async (context) => {
-        const { action, body, ack } = context;
-        await ack();
-        const blockPayload = body;
-        const ts = blockPayload.actions[0].action_ts;
-
-        const syntheticMessage = {
-          type: "message",
-          subtype: undefined,
-          channel: blockPayload.channel.id,
-          channel_type: "mpim",
-          user: blockPayload.user.id,
-          ts,
-          event_ts: ts,
-          text: blockPayload.actions[0].value,
-        };
-        observer.onNext(syntheticMessage);
-      };
-
-      // Register event handlers using native Bolt event system
-      this.bolt.event("message", messageHandler);
-      this.bolt.action(
-        { block_id: /quest-team-vote|quest-success-vote/ },
-        actionHandler
-      );
-
-      // No cleanup needed
-      return () => {};
-    });
-
-    this.handleStartGameMessages(messages);
+    this.handleStartGameMessages();
   }
 
   // Private: Looks for messages directed at the bot that contain the word
@@ -162,9 +120,9 @@ export class Bot {
   // messages - An Observable representing messages posted to a channel
   //
   // Returns nothing (side-effecting async function)
-  async handleStartGameMessages(messages) {
-    // Subscribe to messages and process them as they arrive
-    messages.subscribe(async (event) => {
+  async handleStartGameMessages() {
+    // Use BoltWithListeners directly for event handling
+    this.bolt.addMessageListener(async ({event}) => {
       // Only process plain messages
       if (event.subtype !== undefined) return;
 
@@ -205,7 +163,7 @@ export class Bot {
           text: `Going ahead with ${starter.players.length} players: ${starter.players.map(M.formatAtUser).join(", ")}`,
           channel: channel.id,
         });
-        await this.startGame(starter.players, messages, starter.channel);
+        await this.startGame(starter.players, channel);
       }
     });
   }
@@ -299,7 +257,8 @@ export class Bot {
   // channel - The channel where the game will be played
   //
   // Returns a {Promise} that signals completion of the game
-  async startGame(players, messages, channel) {
+  async startGame(players, channel) {
+
     if (players.length < Avalon.MIN_PLAYERS) {
       // TODO: send status back to webpage
       this.bolt.client.chat.postMessage({
@@ -369,7 +328,8 @@ export class Bot {
       role_names.forEach(role => this.gameConfig.specialRoles.push(role));
 
       // Create and configure game
-      let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
+      // NOTE: Avalon should create its own messages object in its constructor
+      let game = (this.game = new Avalon(gameUx, this.api, this.bolt, channel, players));
       _.extend(game, this.gameConfig);
 
       // Open DMs for all players
