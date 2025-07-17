@@ -406,10 +406,6 @@ export class Bot {
     //      });
   }
 
-  // Private: Adds AI-based players (primarily for testing purposes).
-  //
-  // players - The players participating in the game
-  addBotPlayers(players) {}
 
   welcomeMessage() {
     return `Hi! I can host Avalon games. Type \`play avalon\` to play.`;
