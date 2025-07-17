@@ -6,28 +6,79 @@ import * as rx from "rx";
 import { ActionPayload } from "./action_payloads";
 
 import { GameUILayer } from "./game-ui-layer";
+const { v4: uuidv4 } = require('uuid');
 
 const _ = require("lodash");
 const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
+// Wrapper for Bolt to allow message listener management by UUID
+class BoltWithListeners {
+  bolt: App;
+  messageListeners: Map<string, (event: {event?, channel?}) => void>;
+
+  constructor(bolt: App) {
+    this.bolt = bolt;
+    this.messageListeners = new Map();
+    // Register a single handler that dispatches to all listeners
+    this.bolt.event('message', async (message) => {
+      for (const listener of this.messageListeners.values()) {
+        try {
+          await listener(message);
+        } catch (e) {
+          // Optionally log error
+        }
+      }
+    });
+  }
+
+  get client() {
+    return this.bolt.client;
+  }
+
+  addMessageListener(fn: (event: {event?, channel?}) => void): string {
+    const id = uuidv4();
+    this.messageListeners.set(id, fn);
+    return id;
+  }
+
+  removeMessageListener(id: string) {
+    this.messageListeners.delete(id);
+  }
+
+  event(eventName: string, ...listeners: any[]): void;
+  event(eventName: RegExp, ...listeners: any[]): void;
+  event(eventName: string | RegExp, ...listeners: any[]): void {
+    return this.bolt.event(eventName as any, ...listeners);
+  }
+
+  action(actionIdOrConstraints: any, listener: any) {
+    return this.bolt.action(actionIdOrConstraints, listener);
+  }
+
+  start() {
+    // The start method usually takes no arguments or a config object
+    return this.bolt.start();
+  }
+}
+
 export class Bot {
   isPolling: boolean;
   api: any;
   gameConfig: any;
   game: any;
-  bolt: App;
+  bolt: BoltWithListeners;
 
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
   constructor(token, connectionToken) {
-    this.bolt = new App({
+    this.bolt = new BoltWithListeners(new App({
       token,
       appToken: connectionToken,
       socketMode: true,
-    });
+    }));
 
     // this.slack = new Slack.RtmClient(token, {
     //   logLevel: process.env.LOG_LEVEL || "error",
