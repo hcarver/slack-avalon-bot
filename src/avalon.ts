@@ -440,7 +440,7 @@ export class Avalon {
     if (successful) {
       this.rejectCount = 0;
       await new Promise(resolve => setTimeout(resolve, timeToPause));
-      return await this.runQuest(this.questPlayers, player).toPromise();
+      return await this.runQuest(this.questPlayers, player);
     }
     this.rejectCount++;
     if (this.rejectCount >= 5) {
@@ -760,98 +760,91 @@ export class Avalon {
     }
   }
 
-  runQuest(questPlayers, leader) {
-    return rx.Observable.forkJoin(
-      this.players.map(p => {
-        const message = this.composeQuestMessage(p, questPlayers, leader)
-        const posted_message = this.api.chat.postMessage(message)
-        return new Promise(resolve => posted_message.then(resp => resolve([p.id, resp.ts])))
-      })
-    )
-      .flatMap(messages => {
-        const player_messages = new Map(messages)
-        let runners = 0;
-        return rx.Observable.fromArray(questPlayers)
-          .map((player) => {
-            return this.dmMessages(player)
-              .where((e) => e.user === player.id && e.text)
-              .map((e) => e.text.trim().toLowerCase())
-              .where(
-                (text) =>
-                  text.score("succeed", 0.5) > 0.5 || text.score("fail", 0.5) > 0.5,
-              )
-              .map((text) => {
-                return { player: player, fail: text.score("fail", 0.5) > 0.5 };
-              })
-              .take(1);
-          })
-          .mergeAll()
-          .take(questPlayers.length)
-          .reduce(
-            (acc, questResult) => {
-              if (questResult.fail) {
-                acc.failed.push(questResult.player);
-              } else {
-                acc.succeeded.push(questResult.player);
-              }
+  async runQuest(questPlayers, leader) {
+    // 1. Send quest messages to all players and collect their message timestamps
+    const player_messages = new Map();
+    await Promise.all(this.players.map(async (p) => {
+      const message = this.composeQuestMessage(p, questPlayers, leader);
+      const resp = await this.api.chat.postMessage(message);
+      player_messages.set(p.id, resp.ts);
+    }));
 
-              this.players.map(p => {
-                const message = this.composeQuestMessage(p, questPlayers, leader, [...acc.failed.map(x => x.id), ...acc.succeeded.map(x => x.id)]);
-                this.api.chat.update({...message, ts: player_messages.get(p.id) as string})
-              })
+    // 2. For each questing player, wait for their DM response (succeed/fail)
+    const failed = [];
+    const succeeded = [];
+    const playerIdsWhoHaveQuested = new Set();
 
-              return acc;
-            },
-            { succeeded: [], failed: [] },
+    const questVotePromises = questPlayers.map((player) => {
+      return new Promise(resolve => {
+        this.dmMessages(player)
+          .where((e) => e.user === player.id && e.text)
+          .map((e) => e.text.trim().toLowerCase())
+          .where(
+            (text) =>
+              text.score("succeed", 0.5) > 0.5 || text.score("fail", 0.5) > 0.5,
           )
-          .map((questResults) => {
-            let questAssign = this.questAssign();
-            if (questResults.failed.length > 0) {
-              if (questResults.failed.length < questAssign.f) {
-                this.progress.push("good");
-                this.broadcast(
-                  `${M.pp(questPlayers)} succeeded the ${
-                    Avalon.ORDER[this.questNumber]
-                  } quest with ${questResults.failed.length} fail!`,
-                  "#08e",
-                );
-              } else {
-                this.progress.push("bad");
-                this.broadcast(
-                  `${questResults.failed.length} in (${M.pp(
-                    questPlayers,
-                  )}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
-                  "#e00",
-                );
-              }
-            } else {
-              this.progress.push("good");
-              this.broadcast(
-                `${M.pp(questPlayers)} succeeded the ${
-                  Avalon.ORDER[this.questNumber]
-                } quest!`,
-                "#08e",
-              );
-            }
-            this.questNumber++;
-            let score = { good: 0, bad: 0 };
-            for (let res of this.progress) {
-              score[res]++;
-            }
-            return score;
-          })
-      })
-          .concatMap((score) => this.evaluateEndGame(score));
+          .take(1)
+          .subscribe((text) => {
+            playerIdsWhoHaveQuested.add(player.id);
+            const fail = text.score("fail", 0.5) > 0.5;
+            if (fail) failed.push(player);
+            else succeeded.push(player);
+            // Update quest status for all players
+            this.players.forEach(p => {
+              const message = this.composeQuestMessage(p, questPlayers, leader, Array.from(playerIdsWhoHaveQuested));
+              this.api.chat.update({ ...message, ts: player_messages.get(p.id) });
+            });
+            resolve({ player, fail });
+          });
+      });
+    });
+
+    await Promise.all(questVotePromises);
+
+    // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
+    let questAssign = this.questAssign();
+    let questResult;
+    if (failed.length > 0) {
+      if (failed.length < questAssign.f) {
+        this.progress.push("good");
+        this.broadcast(
+          `${M.pp(questPlayers)} succeeded the ${Avalon.ORDER[this.questNumber]} quest with ${failed.length} fail!`,
+          "#08e",
+        );
+        questResult = "good";
+      } else {
+        this.progress.push("bad");
+        this.broadcast(
+          `${failed.length} in (${M.pp(questPlayers)}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
+          "#e00",
+        );
+        questResult = "bad";
+      }
+    } else {
+      this.progress.push("good");
+      this.broadcast(
+        `${M.pp(questPlayers)} succeeded the ${Avalon.ORDER[this.questNumber]} quest!`,
+        "#08e",
+      );
+      questResult = "good";
+    }
+    this.questNumber++;
+    let score = { good: 0, bad: 0 };
+    for (let res of this.progress) {
+      score[res]++;
+    }
+    // 4. Await the endgame evaluation
+    return await this.evaluateEndGame(score);
   }
 
-  evaluateEndGame(score) {
+  async evaluateEndGame(score) {
     if (score.bad == 3) {
       this.endGame(
         `:red_circle: Minions of Mordred win by failing 3 quests!`,
         "#e00",
         false
       );
-      return rx.Observable.return(true);
+      return Promise.resolve(true);
     } else if (score.good == 3) {
       let merlin = this.players.filter((player) => player.role == "merlin");
       if (!merlin.length) {
@@ -860,7 +853,7 @@ export class Avalon {
           "#08e",
           false
         );
-        return rx.Observable.return(true);
+        return Promise.resolve(true);
       }
       let assassin = this.assassin;
       merlin = merlin[0];
@@ -869,9 +862,10 @@ export class Avalon {
         `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
       );
       const killablePlayers = this.players.filter((p) => p.id !== assassin.id);
-      return this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
+      await this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
+      return Promise.resolve(true);
     }
-    return rx.Observable.return(true);
+    return Promise.resolve(true);
   }
 
   async assassinMerlinKill(status, assassin, merlin, killablePlayers) {
