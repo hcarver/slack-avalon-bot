@@ -188,19 +188,12 @@ export class Bot {
     }
 
     let players = [];
-    const joinedAlready = [];
     let countdown = timeout;
     let intervalId;
     let resolveFn;
     const playerSet = new Set();
 
     const formatMessage = (t) => `Respond with *'yes'* in this channel${M.timer(t)}.\n\nPlayers joined (${players.length}):* ${players.map(M.formatAtUser).join(", ") || "_None yet_"}`
-
-    const payload = await this.bolt.client.chat.postMessage({
-      text: formatMessage(timeout),
-      channel: channel.id,
-    });
-
 
     // Handler for collecting players
     const amessageHandler = async ({event}) => {
@@ -225,6 +218,11 @@ export class Bot {
 
     // Listen for messages
     const listenerId = this.bolt.addMessageListener(amessageHandler);
+
+    const payload = await this.bolt.client.chat.postMessage({
+      text: formatMessage(timeout),
+      channel: channel.id,
+    });
 
     // Countdown and update message
     await new Promise<void>((resolve) => {
