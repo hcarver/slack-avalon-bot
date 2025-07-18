@@ -1,7 +1,6 @@
 "use strict";
 
 import { webApi } from "@slack/bolt";
-import { MessageAttachment } from "@slack/types";
 
 import { GameUILayer } from "./game-ui-layer";
 
@@ -302,7 +301,7 @@ export class Avalon {
     }
 
     this.subscription = rx.Observable.return(true)
-      .flatMap(() => this.playRound())
+      .flatMap(() => rx.Observable.fromPromise(this.playRound()))
       .repeat()
       .takeUntil(this.gameEnded)
       .subscribe();
@@ -336,10 +335,10 @@ export class Avalon {
     // this.endTimeout = setTimeout(() => this.chatSubscription.dispose(), 60000);
   }
 
-  playRound() {
-    return rx.Observable.fromArray(this.players).concatMap((player) =>
-      this.deferredActionForPlayer(player),
-    );
+  async playRound() {
+    for (const player of this.players) {
+      await this.deferredActionForPlayer(player);
+    }
   }
 
   revealRoles(excludeMerlin) {
@@ -380,7 +379,7 @@ export class Avalon {
   }
 
   broadcast(message, color?, special?) {
-    let attachment: MessageAttachment = {
+    let attachment: any = {
       fallback: message,
       text: message,
       mrkdwn_in: ["pretext", "text"],
@@ -411,55 +410,49 @@ export class Avalon {
     ];
   }
 
-  deferredActionForPlayer(player, timeToPause?) {
+  async deferredActionForPlayer(player, timeToPause?) {
     timeToPause = timeToPause || 3000;
-    return rx.Observable.defer(() => {
-      return rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
-        let questAssign = this.questAssign();
-        let f = "";
-        if (questAssign.f > 1) {
-          f = "(2 fails required) ";
-        }
-        let message = ` ${questAssign.n} players ${f}to go on the ${
+    await new Promise(resolve => setTimeout(resolve, timeToPause));
+
+    const questAssign = this.questAssign();
+    let f = "";
+    if (questAssign.f > 1) {
+      f = "(2 fails required) ";
+    }
+    let message = ` ${questAssign.n} players ${f}to go on the ${
+      Avalon.ORDER[this.questNumber]
+    } quest.`;
+    let status = `Quest progress: ${this.getStatus(true)}\n`;
+    let order = this.players.map((p) =>
+      p.id == player.id
+        ? `*${M.formatAtUser(p.id)}*`
+        : M.formatAtUser(p.id),
+    );
+    status += `Player order: ${order}\n`;
+
+    const full_message = `${status}${M.formatAtUser(
+      player.id,
+    )} will choose${message} (attempt number ${this.rejectCount + 1})`;
+
+    this.broadcast(full_message, "#a60", "");
+
+    const successful = await this.choosePlayersForQuest(player);
+    if (successful) {
+      this.rejectCount = 0;
+      await new Promise(resolve => setTimeout(resolve, timeToPause));
+      return await this.runQuest(this.questPlayers, player).toPromise();
+    }
+    this.rejectCount++;
+    if (this.rejectCount >= 5) {
+      this.endGame(
+        `:red_circle: Minions of Mordred win due to the ${
           Avalon.ORDER[this.questNumber]
-        } quest.`;
-        let status = `Quest progress: ${this.getStatus(true)}\n`;
-        let order = this.players.map((p) =>
-          p.id == player.id
-            ? `*${M.formatAtUser(p.id)}*`
-            : M.formatAtUser(p.id),
-        );
-        status += `Player order: ${order}\n`;
-
-        const full_message = `${status}${M.formatAtUser(
-          player.id,
-        )} will choose${message} (attempt number ${this.rejectCount + 1})`;
-
-        this.broadcast(full_message, "#a60", "");
-
-        return this.choosePlayersForQuest(player).concatMap((successful) => {
-          if (successful) {
-            this.rejectCount = 0;
-            return rx.Observable.defer(() =>
-              rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
-                return this.runQuest(this.questPlayers, player);
-              }),
-            );
-          }
-          this.rejectCount++;
-          if (this.rejectCount >= 5) {
-            this.endGame(
-              `:red_circle: Minions of Mordred win due to the ${
-                Avalon.ORDER[this.questNumber]
-              } quest rejected 5 times!`,
-              "#e00",
-              true,
-            );
-          }
-          return rx.Observable.return(true);
-        });
-      });
-    });
+        } quest rejected 5 times!`,
+        "#e00",
+        true,
+      );
+    }
+    return true;
   }
 
   questHistoryMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
@@ -582,9 +575,10 @@ export class Avalon {
     }
   }
 
-  choosePlayersForQuest(player) {
+  async choosePlayersForQuest(player) {
     let questAssign = this.questAssign();
 
+    // Await the player's team choice
     const playerChoice = this.gameUx.pollForDecision(
       this.playerDms[player.id],
       `Choose a team of ${questAssign.n}`,
@@ -594,75 +588,65 @@ export class Avalon {
       questAssign.n,
       questAssign.n,
     );
+    const idxs = await playerChoice as number[];
+    const questPlayers = idxs.map((i) => this.players[i]);
+    this.questPlayers = questPlayers;
 
-    return rx.Observable.fromPromise(playerChoice)
-    .map((idx) => idx.map((i) => this.players[i]))
-    .concatMap((questPlayers) => {
-      this.questPlayers = questPlayers;
+    // Send voting messages to all players and collect their message timestamps
+    // List of player ids and timestamps
+    // This is necessary, rather than a map, because we use the same player id multiple times in dev
+    const player_messages: Array<[{id: string}, string]> = [];
+    await Promise.all(this.players.map(async (p) => {
+      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p));
+      player_messages.push([p, resp.ts]);
+    }));
 
-      return rx.Observable.forkJoin(
-        this.players.map(p => {
-          const posted_message = this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p))
+    // Helper to update voting status for all players
+    const updateVotingStatus = () => {
+      player_messages.forEach(([p, ts]) => {
+        let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p, approveVotes, rejectVotes);
+        this.api.chat.update({ ...updated_version, ts: ts });
+      })
+    };
 
-          return new Promise(resolve => posted_message.then(resp => resolve([p.id, resp.ts])))
-        })
-      )
-      .first()
-      .flatMap(messages => {
-        const player_messages = new Map(messages)
+    // Collect votes from DMs using this.dmMessages
+    const approveVotes = [];
+    const rejectVotes = [];
+    const votedPlayers = new Set();
 
-        return rx.Observable.fromArray(this.players)
-        .map((p) => {
-
-          return this.dmMessages(p)
+    // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
+    const uniquePlayers: {id: string}[] = [...new Set(this.players.map((p: any) => p.id))].map((id: string) => this.players.find((p: any) => p.id === id));
+    const votePromises = uniquePlayers.map((p: {id: string}) => {
+      return new Promise(resolve => {
+        this.dmMessages(p)
           .where((e) => e.user === p.id && e.text)
           .map((e) => e.text.trim().toLowerCase())
           .where(
             (text) =>
-            text.score("approve", 0.5) > 0.5 ||
+              text.score("approve", 0.5) > 0.5 ||
               text.score("reject", 0.5) > 0.5,
           )
-          .map((text) => {
-            return { player: p, approve: text.score("approve", 0.5) > 0.5 };
-          })
-          .take(1);
-        })
-        .mergeAll()
-        .take(this.players.length)
-        .reduce(
-          (acc, vote) => {
-            // TODO: bufferWithTime on this
-            if (vote.approve) {
-              acc.approved.push(vote.player);
-            } else {
-              acc.rejected.push(vote.player);
-            }
-            if (acc.approved.length + acc.rejected.length < this.players.length) {
-              let voted = acc.approved.concat(acc.rejected);
-              let remaining = this.players.length - voted.length;
+          .take(1)
+          .subscribe((text) => {
+            if (votedPlayers.has(p.id)) return;
+            votedPlayers.add(p.id);
+            const approve = text.score("approve", 0.5) > 0.5;
+            if (approve) approveVotes.push(p);
+            else rejectVotes.push(p);
+            updateVotingStatus();
+            resolve({ player: p, approve });
+          });
+      });
+    });
+    const votes = await Promise.all(votePromises);
 
-              this.players.map(p => {
-                let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p, acc.approved, acc.rejected)
-
-                this.api.chat.update({...updated_version, ts: player_messages.get(p.id) as string})
-              })
-            }
-            return acc;
-          },
-          { approved: [], rejected: [] },
-        ).map(({approved, rejected}) => {
-          const successful = approved.length > rejected.length;
-
-          this.players.map(p => {
-            let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questNumber, p, approved, rejected)
-
-            this.api.chat.update({...updated_version, ts: player_messages.get(p.id) as string})
-          })
-
-          return successful
-        }) ;
-      })
+    // After all votes are in, update quest history for all players
+    player_messages.map(([p, ts]) => {
+      let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questNumber, p, approveVotes, rejectVotes);
+      this.api.chat.update({ ...updated_version, ts: ts });
     })
+
+    return approveVotes.length > rejectVotes.length;
   }
 
   getStatus(current) {
