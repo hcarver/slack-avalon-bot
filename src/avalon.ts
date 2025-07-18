@@ -841,34 +841,37 @@ export class Avalon {
             return score;
           })
       })
-          .concatMap((score) => {
-            if (score.bad == 3) {
-              this.endGame(
-                `:red_circle: Minions of Mordred win by failing 3 quests!`,
-                "#e00",
-                false
-              );
-            } else if (score.good == 3) {
-              let merlin = this.players.filter((player) => player.role == "merlin");
-              if (!merlin.length) {
-                this.endGame(
-                  `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
-                  "#08e",
-                  false
-                );
-                return rx.Observable.return(true);
-              }
-              let assassin = this.assassin;
-              merlin = merlin[0];
-              let status = `Quest Results: ${this.getStatus(false)}\n`;
-              this.broadcast(
-                `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
-              );
-              const killablePlayers = this.players.filter((p) => p.id !== assassin.id);
-              return this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
-            }
-            return rx.Observable.return(true);
-          });
+          .concatMap((score) => this.evaluateEndGame(score));
+  }
+
+  evaluateEndGame(score) {
+    if (score.bad == 3) {
+      this.endGame(
+        `:red_circle: Minions of Mordred win by failing 3 quests!`,
+        "#e00",
+        false
+      );
+      return rx.Observable.return(true);
+    } else if (score.good == 3) {
+      let merlin = this.players.filter((player) => player.role == "merlin");
+      if (!merlin.length) {
+        this.endGame(
+          `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
+          "#08e",
+          false
+        );
+        return rx.Observable.return(true);
+      }
+      let assassin = this.assassin;
+      merlin = merlin[0];
+      let status = `Quest Results: ${this.getStatus(false)}\n`;
+      this.broadcast(
+        `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
+      );
+      const killablePlayers = this.players.filter((p) => p.id !== assassin.id);
+      return this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
+    }
+    return rx.Observable.return(true);
   }
 
   assassinMerlinKill(status, assassin, merlin, killablePlayers) {
