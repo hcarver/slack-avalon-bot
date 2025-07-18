@@ -42,15 +42,15 @@ export class GameUILayer {
     const submit_id = `${(Math.random() + 1).toString(36)}`;
     let selected_options = []
 
-    const done = new Promise((resolve) => {
-      this.app.action(
-        { action_id: checkbox_id},
-        async (request) => {
-          request.ack();
-          selected_options = (request.action as CheckboxesAction).selected_options.map (x => x.value)
-        }
-      );
+    this.app.action(
+      { action_id: checkbox_id },
+      async (request) => {
+        request.ack();
+        selected_options = (request.action as CheckboxesAction).selected_options.map(x => x.value)
+      }
+    );
 
+    const done = new Promise((resolve) => {
       this.app.action(
         { action_id: submit_id},
         async (request) => {
