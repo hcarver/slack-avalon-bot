@@ -18,9 +18,7 @@ export class Avalon {
   api: webApi.WebClient;
   messages: any;
   date: any;
-  scheduler: any;
   channel: any;
-  gameEnded;
   isRunning;
   questNumber;
   rejectCount;
@@ -32,6 +30,7 @@ export class Avalon {
   resistance;
   questPlayers;
   bolt: any; // Added for message listening
+  private _gameEnded: boolean = false;
 
   static MIN_PLAYERS = 5;
 
@@ -144,8 +143,7 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(gameUx, api, bolt, channel, players, scheduler) {
-    scheduler = scheduler || rx.Scheduler.timeout;
+  constructor(gameUx, api, bolt, channel, players) {
     this.api = api;
     this.gameUx = gameUx;
     this.bolt = bolt;
@@ -154,9 +152,8 @@ export class Avalon {
     this.players = players.map((id) => {
       return { id: id };
     });
-    this.scheduler = scheduler;
-    this.gameEnded = new rx.Subject();
     _.extend(this, Avalon.DEFAULT_CONFIG);
+    this._gameEnded = false;
 
     this.messages = rx.Observable.create((observer) => {
       // Set up message event handler
@@ -300,13 +297,13 @@ export class Avalon {
       );
     }
 
-    this.subscription = rx.Observable.return(true)
-      .flatMap(() => rx.Observable.fromPromise(this.playRound()))
-      .repeat()
-      .takeUntil(this.gameEnded)
-      .subscribe();
-
-    return this.gameEnded;
+    this._gameEnded = false;
+    (async () => {
+      while (!this._gameEnded) {
+        await this.playRound();
+      }
+    })();
+    return Promise.resolve();
   }
 
   getRoleAssigns(roles) {
@@ -328,10 +325,8 @@ export class Avalon {
   }
 
   quit() {
-    this.gameEnded.onNext(true);
-    this.gameEnded.onCompleted();
+    this._gameEnded = true;
     this.isRunning = false;
-    this.subscription.dispose();
     // this.endTimeout = setTimeout(() => this.chatSubscription.dispose(), 60000);
   }
 
