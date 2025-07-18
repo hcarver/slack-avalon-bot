@@ -860,73 +860,73 @@ export class Avalon {
               }
               let assassin = this.assassin;
               merlin = merlin[0];
-
               let status = `Quest Results: ${this.getStatus(false)}\n`;
               this.broadcast(
                 `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
               );
-              return rx.Observable.defer(() => {
-                return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
-                  this.broadcast(
-                    `*${M.formatAtUser(
-                      assassin.id,
-                    )}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN.`,
-                    "#e00",
-                  );
-
-                  const killablePlayers = this.players.filter(
-                    (p) => p.id !== assassin.id,
-                  );
-
-                  const playerChoice = this.gameUx.pollForDecision(
-                    this.playerDms[assassin.id],
-                    `Choose who to kill`,
-                    killablePlayers.map((player) => M.formatAtUser(player)),
-                    "Kill",
-                    (user_id) => user_id === assassin.id,
-                    1,
-                    1,
-                  );
-
-                  return rx.Observable.return(true).flatMap(() => {
-                    return rx.Observable.fromPromise(playerChoice)
-                      .map((idx) => killablePlayers[idx[0]])
-                      .do((accused) => {
-                        if (accused.role != "merlin") {
-                          this.broadcast(
-                            `${status}:crossed_swords:${M.formatAtUser(
-                              assassin.id,
-                            )} chose ${M.formatAtUser(
-                              accused.id,
-                            )} as MERLIN, not :angel:${M.formatAtUser(
-                              merlin.id,
-                            )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
-                              true,
-                            )}`,
-                            "#08e",
-                            "end",
-                          );
-                        } else {
-                          this.broadcast(
-                            `${status}:crossed_swords:${M.formatAtUser(
-                              assassin.id,
-                            )} chose :angel:${M.formatAtUser(
-                              accused.id,
-                            )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
-                              true,
-                            )}`,
-                            "#e00",
-                            "end",
-                          );
-                        }
-                        this.quit();
-                      });
-                  });
-                });
-              });
+              const killablePlayers = this.players.filter((p) => p.id !== assassin.id);
+              return this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
             }
             return rx.Observable.return(true);
           });
+  }
+
+  assassinMerlinKill(status, assassin, merlin, killablePlayers) {
+    return rx.Observable.defer(() => {
+      return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
+        this.broadcast(
+          `*${M.formatAtUser(
+            assassin.id,
+          )}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN.`,
+          "#e00",
+        );
+
+        const playerChoice = this.gameUx.pollForDecision(
+          this.playerDms[assassin.id],
+          `Choose who to kill`,
+          killablePlayers.map((player) => M.formatAtUser(player)),
+          "Kill",
+          (user_id) => user_id === assassin.id,
+          1,
+          1,
+        );
+
+        return rx.Observable.return(true).flatMap(() => {
+          return rx.Observable.fromPromise(playerChoice)
+            .map((idx) => killablePlayers[idx[0]])
+            .do((accused) => {
+              if (accused.role != "merlin") {
+                this.broadcast(
+                  `${status}:crossed_swords:${M.formatAtUser(
+                    assassin.id,
+                  )} chose ${M.formatAtUser(
+                    accused.id,
+                  )} as MERLIN, not :angel:${M.formatAtUser(
+                    merlin.id,
+                  )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
+                    true,
+                  )}`,
+                  "#08e",
+                  "end",
+                );
+              } else {
+                this.broadcast(
+                  `${status}:crossed_swords:${M.formatAtUser(
+                    assassin.id,
+                  )} chose :angel:${M.formatAtUser(
+                    accused.id,
+                  )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
+                    true,
+                  )}`,
+                  "#e00",
+                  "end",
+                );
+              }
+              this.quit();
+            });
+        });
+      });
+    });
   }
 }
 
