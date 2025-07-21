@@ -14,10 +14,12 @@ const Avalon = require("./avalon");
 class BoltWithListeners {
   bolt: App;
   messageListeners: Map<string, (event: {event?}) => void>;
+  actionListeners: Map<string, (context: any) => void>;
 
   constructor(bolt: App) {
     this.bolt = bolt;
     this.messageListeners = new Map();
+    this.actionListeners = new Map();
     // Register a single handler that dispatches to all listeners
     this.bolt.event('message', async (message) => {
       for (const listener of this.messageListeners.values()) {
@@ -25,6 +27,23 @@ class BoltWithListeners {
           await listener(message);
         } catch (e) {
           // Optionally log error
+        }
+      }
+    });
+    // Register a single action handler that dispatches to all listeners
+    this.bolt.action(/.*/, async (context) => {
+      if (
+        "actions" in context.body &&
+        Array.isArray((context.body as any).actions) &&
+        (context.body as any).actions.length > 0
+      ) {
+        const blockId = (context.body as any).actions[0].block_id;
+        if (blockId && this.actionListeners.has(blockId)) {
+          try {
+            await this.actionListeners.get(blockId)!(context);
+          } catch (e) {
+            // Optionally log error
+          }
         }
       }
     });
@@ -40,8 +59,23 @@ class BoltWithListeners {
     return id;
   }
 
+  /**
+   * Add an action listener for a specific block_id.
+   * @param block_id - The block_id to listen for
+   * @param fn - The callback to invoke when the action is triggered
+   * @returns The block_id (used for removal)
+   */
+  addActionListener(block_id: string, fn: (context: any) => void): string {
+    this.actionListeners.set(block_id, fn);
+    return block_id;
+  }
+
   removeMessageListener(id: string) {
     this.messageListeners.delete(id);
+  }
+
+  removeActionListener(block_id: string) {
+    this.actionListeners.delete(block_id);
   }
 
   event(eventName: string, ...listeners: any[]): void;
