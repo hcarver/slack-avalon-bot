@@ -604,36 +604,52 @@ export class Avalon {
       })
     };
 
-    // Collect votes from DMs using this.dmMessages
+    // Collect votes from button clicks using addActionListener
     const approveVotes = [];
     const rejectVotes = [];
     const votedPlayers = new Set();
+    const voteResolvers = new Map(); // Store promise resolvers for each player
 
     // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
     const uniquePlayers: {id: string}[] = [...new Set(this.players.map((p: any) => p.id))].map((id: string) => this.players.find((p: any) => p.id === id));
+    
+    // Create promises for each player's vote
     const votePromises = uniquePlayers.map((p: {id: string}) => {
       return new Promise(resolve => {
-        this.dmMessages(p)
-          .where((e) => e.user === p.id && e.text)
-          .map((e) => e.text.trim().toLowerCase())
-          .where(
-            (text) =>
-              text.score("approve", 0.5) > 0.5 ||
-              text.score("reject", 0.5) > 0.5,
-          )
-          .take(1)
-          .subscribe((text) => {
-            if (votedPlayers.has(p.id)) return;
-            votedPlayers.add(p.id);
-            const approve = text.score("approve", 0.5) > 0.5;
-            if (approve) approveVotes.push(p);
-            else rejectVotes.push(p);
-            updateVotingStatus();
-            resolve({ player: p, approve });
-          });
+        voteResolvers.set(p.id, resolve);
       });
     });
+
+    // Register a single action listener for all button clicks
+    const actionListenerId = this.bolt.addActionListener("quest-team-vote", async (context) => {
+      const userId = context.body.user.id;
+      const action = context.body.actions[0];
+      const voteValue = action.value; // "approve" or "reject"
+      
+      if (votedPlayers.has(userId)) return; // Already voted
+      
+      const player = uniquePlayers.find(p => p.id === userId);
+      if (!player) return; // Not a valid player
+      
+      votedPlayers.add(userId);
+      const approve = voteValue === "approve";
+      
+      if (approve) approveVotes.push(player);
+      else rejectVotes.push(player);
+      
+      updateVotingStatus();
+      
+      // Resolve the promise for this player
+      const resolver = voteResolvers.get(userId);
+      if (resolver) {
+        resolver({ player, approve });
+      }
+    });
+
     const votes = await Promise.all(votePromises);
+
+    // Clean up the action listener
+    this.bolt.removeActionListener(actionListenerId);
 
     // After all votes are in, update quest history for all players
     player_messages.map(([p, ts]) => {
