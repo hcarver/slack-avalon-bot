@@ -4,12 +4,9 @@ import { webApi } from "@slack/bolt";
 
 import { GameUILayer } from "./game-ui-layer";
 
-const rx = require("rx");
 const _ = require("lodash");
 const M = require("./message-helpers");
 require("string_score");
-
-rx.config.longStackSupport = true;
 
 export class Avalon {
   players: any;
@@ -154,45 +151,6 @@ export class Avalon {
     });
     _.extend(this, Avalon.DEFAULT_CONFIG);
     this._gameEnded = false;
-
-    this.messages = rx.Observable.create((observer) => {
-      // Set up message event handler
-      const messageHandler = async ({ event, client, logger }) => {
-        if (event.subtype === undefined) {
-          observer.onNext(event);
-        }
-      };
-
-      // Set up action event handler for block kit interactions
-      const actionHandler = async (context) => {
-        const { action, body, ack } = context;
-        await ack();
-        const blockPayload = body;
-        const ts = blockPayload.actions[0].action_ts;
-
-        const syntheticMessage = {
-          type: "message",
-          subtype: undefined,
-          channel: blockPayload.channel.id,
-          channel_type: "mpim",
-          user: blockPayload.user.id,
-          ts,
-          event_ts: ts,
-          text: blockPayload.actions[0].value,
-        };
-        observer.onNext(syntheticMessage);
-      };
-
-      // Register event handlers using native Bolt event system
-      this.bolt.event("message", messageHandler);
-      this.bolt.action(
-        { block_id: /quest-team-vote|quest-success-vote/ },
-        actionHandler
-      );
-
-      // No cleanup needed
-      return () => { };
-    });
   }
 
   start(playerDms, timeBetweenRounds) {
@@ -393,10 +351,6 @@ export class Avalon {
         attachments: [attachment],
       });
     });
-  }
-
-  dmMessages(player) {
-    return this.messages.where((e) => e.channel == this.playerDms[player.id]);
   }
 
   questAssign() {
@@ -785,32 +739,50 @@ export class Avalon {
     const succeeded = [];
     const playerIdsWhoHaveQuested = new Set();
 
-    const questVotePromises = questPlayers.map((player) => {
-      return new Promise(resolve => {
-        this.dmMessages(player)
-          .where((e) => e.user === player.id && e.text)
-          .map((e) => e.text.trim().toLowerCase())
-          .where(
-            (text) =>
-              text.score("succeed", 0.5) > 0.5 || text.score("fail", 0.5) > 0.5,
-          )
-          .take(1)
-          .subscribe((text) => {
-            playerIdsWhoHaveQuested.add(player.id);
-            const fail = text.score("fail", 0.5) > 0.5;
-            if (fail) failed.push(player);
-            else succeeded.push(player);
-            // Update quest status for all players
-            this.players.forEach(p => {
-              const message = this.composeQuestMessage(p, questPlayers, leader, Array.from(playerIdsWhoHaveQuested));
-              this.api.chat.update({ ...message, ts: player_messages.get(p.id) });
-            });
-            resolve({ player, fail });
-          });
+    // Use action listener for quest votes
+    const questVoteResolvers = new Map();
+    const questVotePromises = new Map();
+
+    questPlayers.map((player) => {
+      const promise = new Promise(resolve => {
+        questVoteResolvers.set(player.id, resolve);
       });
+      questVotePromises.set(player.id, promise);
     });
 
-    await Promise.all(questVotePromises);
+    // Register a single action listener for all quest succeed/fail button clicks
+    const questActionListenerId = this.bolt.addActionListener("quest-success-vote", async (context) => {
+      const userId = context.body.user.id;
+      const action = context.body.actions[0];
+      const voteValue = action.value; // "succeed" or "fail"
+
+      // Only allow questing players who haven't voted yet
+      if (!questPlayers.some(p => p.id === userId)) return;
+      if (playerIdsWhoHaveQuested.has(userId)) return;
+
+      playerIdsWhoHaveQuested.add(userId);
+      const player = questPlayers.find(p => p.id === userId);
+      const fail = voteValue === "fail";
+      if (fail) failed.push(player);
+      else succeeded.push(player);
+
+      // Update quest status for all players
+      this.players.forEach(p => {
+        const message = this.composeQuestMessage(p, questPlayers, leader, Array.from(playerIdsWhoHaveQuested));
+        this.api.chat.update({ ...message, ts: player_messages.get(p.id) });
+      });
+
+      // Resolve the promise for this player
+      const resolver = questVoteResolvers.get(userId);
+      if (resolver) {
+        resolver({ player, fail });
+      }
+    });
+
+    await Promise.all(questVotePromises.values());
+
+    // Clean up the action listener
+    this.bolt.removeActionListener(questActionListenerId);
 
     // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
     let questAssign = this.questAssign();
