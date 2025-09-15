@@ -298,7 +298,7 @@ export class Bot {
       return Promise.resolve();
     }
 
-    const configuringPlayer = players[0];
+    const configuringPlayer = players[Math.floor(Math.random() * players.length)];
 
     this.bolt.client.chat.postMessage({
       text: `${M.formatAtUser(configuringPlayer)} will now choose the roles in play for this game.`,

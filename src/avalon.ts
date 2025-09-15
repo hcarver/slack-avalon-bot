@@ -290,7 +290,10 @@ export class Avalon {
 
   async playRound() {
     for (const player of this.players) {
-      await this.deferredActionForPlayer(player);
+      const gameOver = await this.deferredActionForPlayer(player);
+      if(gameOver) {
+        break;
+      }
     }
   }
 
