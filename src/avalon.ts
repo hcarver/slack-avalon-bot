@@ -2,7 +2,7 @@
 
 import { webApi } from "@slack/bolt";
 
-import { GameUILayer } from "./game-ui-layer";
+import { GameUILayer } from "./game-ui-layer.js";
 
 const _ = require("lodash");
 const M = require("./message-helpers");
@@ -28,6 +28,7 @@ export class Avalon {
   questPlayers;
   bolt: any; // Added for message listening
   private _gameEnded: boolean = false;
+  private currentLeaderIndex: number;
 
   static MIN_PLAYERS = 5;
 
@@ -161,6 +162,7 @@ export class Avalon {
     this.progress = [];
     this.playerDms = playerDms;
     this.date = new Date();
+    this.currentLeaderIndex = 0;
 
     let players = (this.players = this.playerOrder(this.players));
     let assigns = this.getRoleAssigns(
@@ -289,12 +291,9 @@ export class Avalon {
   }
 
   async playRound() {
-    for (const player of this.players) {
-      const gameOver = await this.deferredActionForPlayer(player);
-      if(gameOver) {
-        break;
-      }
-    }
+    const leader = this.players[this.currentLeaderIndex];
+    await this.deferredActionForPlayer(leader);
+    this.currentLeaderIndex = (this.currentLeaderIndex + 1) % this.players.length;
   }
 
   revealRoles(excludeMerlin) {
