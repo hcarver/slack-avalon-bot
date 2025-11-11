@@ -22,11 +22,11 @@
   "dependencies": {
     "@slack/bolt": "^4.1.0",
     "@slack/types": "^2.14.0",
-    "@types/rx": "^4.1.4",
+    "@types/uuid": "^10.0.0",
     "body-parser": "1.15.0",
     "lodash": "^4.0.1",
-    "rx": "^4.0.7",
-    "string_score": "^v0.1"
+    "string_score": "^v0.1",
+    "uuid": "^11.1.0"
   },
   "eslintConfig": {
     "env": {

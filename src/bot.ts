@@ -1,33 +1,115 @@
 "use strict";
 
 import { App } from "@slack/bolt";
-import { GenericMessageEvent } from "@slack/types";
-import * as rx from "rx";
-import { ActionPayload } from "./action_payloads";
 
 import { GameUILayer } from "./game-ui-layer";
+const { v4: uuidv4 } = require('uuid');
 
 const _ = require("lodash");
 const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
+// Wrapper for Bolt to allow message listener management by UUID
+class BoltWithListeners {
+  bolt: App;
+  messageListeners: Map<string, (event: {event?}) => void>;
+  actionListeners: Map<string, (context: any) => void>;
+
+  constructor(bolt: App) {
+    this.bolt = bolt;
+    this.messageListeners = new Map();
+    this.actionListeners = new Map();
+    // Register a single handler that dispatches to all listeners
+    this.bolt.event('message', async (message) => {
+      for (const listener of this.messageListeners.values()) {
+        try {
+          await listener(message);
+        } catch (e) {
+          // Optionally log error
+        }
+      }
+    });
+    // Register a single action handler that dispatches to all listeners
+    this.bolt.action(/.*/, async (context) => {
+      if (
+        "actions" in context.body &&
+        Array.isArray((context.body as any).actions) &&
+        (context.body as any).actions.length > 0
+      ) {
+        const blockId = (context.body as any).actions[0].block_id;
+        if (blockId && this.actionListeners.has(blockId)) {
+          try {
+            await this.actionListeners.get(blockId)!(context);
+          } catch (e) {
+            // Optionally log error
+          }
+        }
+      }
+    });
+  }
+
+  get client() {
+    return this.bolt.client;
+  }
+
+  addMessageListener(fn: (event: {event?}) => void): string {
+    const id = uuidv4();
+    this.messageListeners.set(id, fn);
+    return id;
+  }
+
+  /**
+   * Add an action listener for a specific block_id.
+   * @param block_id - The block_id to listen for
+   * @param fn - The callback to invoke when the action is triggered
+   * @returns The block_id (used for removal)
+   */
+  addActionListener(block_id: string, fn: (context: any) => void): string {
+    this.actionListeners.set(block_id, fn);
+    return block_id;
+  }
+
+  removeMessageListener(id: string) {
+    this.messageListeners.delete(id);
+  }
+
+  removeActionListener(block_id: string) {
+    this.actionListeners.delete(block_id);
+  }
+
+  event(eventName: string, ...listeners: any[]): void;
+  event(eventName: RegExp, ...listeners: any[]): void;
+  event(eventName: string | RegExp, ...listeners: any[]): void {
+    return this.bolt.event(eventName as any, ...listeners);
+  }
+
+  action(actionIdOrConstraints: any, listener: any) {
+    return this.bolt.action(actionIdOrConstraints, listener);
+  }
+
+  start() {
+    // The start method usually takes no arguments or a config object
+    return this.bolt.start();
+  }
+}
+
 export class Bot {
   isPolling: boolean;
   api: any;
   gameConfig: any;
   game: any;
-  bolt: App;
+  bolt: BoltWithListeners;
 
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
   constructor(token, connectionToken) {
-    this.bolt = new App({
+    this.bolt = new BoltWithListeners(new App({
       token,
       appToken: connectionToken,
       socketMode: true,
-    });
+    }));
 
     // this.slack = new Slack.RtmClient(token, {
     //   logLevel: process.env.LOG_LEVEL || "error",
@@ -61,148 +143,71 @@ export class Bot {
         });
       },
     );
-
-    const messages = rx.Observable.create<GenericMessageEvent>((observer) => {
-      this.bolt.event("message", async ({ event, client, logger }) => {
-        if (event.subtype === undefined) {
-          observer.onNext(event as GenericMessageEvent);
-        }
-      });
-
-      /* this covers buttons, checkboxes etc. from block kit messages.
-         For now we just synthesize a message
-
-         Unhelpfully, the slack typescript definitions don't know about this data - see https://api.slack.com/reference/interaction-payloads/block-actions
-         */
-      this.bolt.action(
-        { block_id: /quest-team-vote|quest-success-vote/ },
-        async ({ action, body, ack }) => {
-          await ack();
-          const blockPayload = body as ActionPayload;
-          const ts = blockPayload.actions[0].action_ts;
-
-          const syntheticMessage = {
-            type: "message",
-            subtype: undefined,
-            channel: blockPayload.channel.id,
-            channel_type: "mpim",
-            user: blockPayload.user.id,
-            ts,
-            event_ts: ts,
-            text: blockPayload.actions[0].value,
-          } satisfies GenericMessageEvent;
-          observer.onNext(syntheticMessage);
-        },
-      );
-    });
-
-    let disp = new rx.CompositeDisposable();
-
-    disp.add(this.handleStartGameMessages(messages));
+    this.handleStartGameMessages();
   }
 
   // Private: Looks for messages directed at the bot that contain the word
   // "deal." When found, start polling players for a game.
   //
-  // messages - An {Observable} representing messages posted to a channel
+  // messages - An Observable representing messages posted to a channel
   //
-  // Returns a {Disposable} that will end this subscription
-  handleStartGameMessages(messages: rx.Observable<GenericMessageEvent>) {
-    const trigger = messages
-      .where((e) => e.subtype === undefined)
-      .concatMap((e) => {
-        return rx.Observable.fromPromise(
-          (async () => {
-            const result = await this.api.conversations.info({
-              channel: e.channel,
-            });
-            return { event: e, channel: result.channel };
-          })(),
-        );
-      });
+  // Returns nothing (side-effecting async function)
+  async handleStartGameMessages() {
+    // Use BoltWithListeners directly for event handling
+    this.bolt.addMessageListener(async ({event}) => {
+      // Only process plain messages
+      if (event.subtype !== undefined) return;
 
-    return trigger
-      .where(({ channel }) => {
-        return !channel.is_im && !channel.is_mpim;
-      })
-      .where(
-        ({ channel, event }) =>
-          event.text &&
-          event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i) !=
-            null,
-      )
-      .where(({ channel, event }) => {
-        this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
-        this.gameConfig.resistance = event.text.match(/resistance/i);
-        if (this.isPolling) {
-          return false;
-        } else if (this.game) {
-          this.bolt.client.chat.postMessage({
-            text: "Another game is in progress, quit that first.",
-            channel: channel.id,
-          });
-          return false;
-        }
-        return true;
-      })
-      .flatMap(({ channel, event }) =>
-        this.pollPlayersForGame(messages, { id: channel.id }, event.user, null, null),
-      )
-      .flatMap((starter) => {
-        this.isPolling = false;
-        this.addBotPlayers(starter.players);
+      // Get channel info
+      const result = await this.api.conversations.info({ channel: event.channel });
+      const channel = result.channel;
 
-        return this.startGame(starter.players, messages, starter.channel);
-      })
-      .subscribe();
-  }
+      // Only process non-DM channels
+      if (channel.is_im || channel.is_mpim) return;
 
-  // Posts a message to the channel with some timeout, that edits
-  // itself each second to provide a countdown.
-  //
-  // channel - The channel to post in
-  // formatMessage - A function that will be invoked once per second with the
-  //                 remaining time, and returns the formatted message content
-  // scheduler - The scheduler to use for timing events
-  // timeout - The duration of the message, in seconds
-  //
-  // Returns an {Observable} sequence that signals expiration of the message
-  postMessageWithTimeout(channel, formatMessage, scheduler, timeout) {
-    const sendMessagePromise = this.bolt.client.chat.postMessage({
-      text: formatMessage(timeout),
-      channel: channel.id,
+      // Only process trigger messages
+      if (!event.text || !event.text.toLowerCase().match(/^play (avalon|resistance)|dta/i)) return;
+
+      // Reset config and check for game in progress
+      this.gameConfig = structuredClone(Avalon.DEFAULT_CONFIG);
+      this.gameConfig.resistance = event.text.match(/resistance/i);
+      if (this.isPolling) return;
+      if (this.game) {
+        this.bolt.client.chat.postMessage({
+          text: "Another game is in progress, quit that first.",
+          channel: channel.id,
+        });
+        return;
+      }
+
+      // Poll for players
+      this.isPolling = true;
+      const starter = await this.pollPlayersForGame(channel);
+      this.isPolling = false;
+
+      if(starter.players.length < Avalon.MIN_PLAYERS) {
+        this.bolt.client.chat.postMessage({
+          text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
+          channel: channel.id,
+        });
+      } else {// Announce the final player list
+        this.bolt.client.chat.postMessage({
+          text: `Going ahead with ${starter.players.length} players: ${starter.players.map(M.formatAtUser).join(", ")}`,
+          channel: channel.id,
+        });
+        await this.startGame(starter.players, channel);
+      }
     });
-
-    let sendMessage = rx.Observable.fromPromise(sendMessagePromise);
-
-    let timeExpired = sendMessage
-      .flatMap((payload) => {
-        return rx.Observable.timer(0, 1000, scheduler)
-          .take(timeout + 1)
-          .do((x) => {
-            this.api.chat.update({
-              ts: payload.ts,
-              channel: channel.id,
-              text: formatMessage(`${timeout - x}`),
-            });
-          });
-      })
-      .publishLast();
-
-    return timeExpired;
   }
 
   // Private: Polls players to join the game, and if we have enough, starts an
   // instance.
   //
-  // messages - An {Observable} representing messages posted to the channel
   // channel - The channel where the deal message was posted
   //
-  // Returns an {Observable} that signals completion of the game
-  pollPlayersForGame(messages, channel, initiator, scheduler, timeout) {
-    scheduler = scheduler || rx.Scheduler.timeout;
-    timeout = timeout || 60;
-    this.isPolling = true;
+  // Returns a Promise that resolves to { channel, players }
+  async pollPlayersForGame(channel) {
+    let timeout = 45;
 
     if (this.gameConfig.resistance) {
       this.bolt.client.chat.postMessage({
@@ -216,95 +221,63 @@ export class Bot {
       });
     }
 
-    // let formatMessage = t => [
-    //   'Respond with:',
-    //   '\t`include percival,morgana,mordred,oberon,lady` to include special roles',
-    //   '\t`add <player1>,<player2>` to add players',
-    //   `\t\`yes\` to join${M.timer(t)}.`
-    // ].join('\n');
-    let formatMessage = (t) =>
-      `Respond with *'yes'* in this channel${M.timer(t)}.`;
-    let timeExpired = this.postMessageWithTimeout(
-      channel,
-      formatMessage,
-      scheduler,
-      timeout,
-    );
+    let players = [];
+    let countdown = timeout;
+    let intervalId;
+    let resolveFn;
+    const playerSet = new Set();
 
-    // Look for messages containing the word 'yes' and map them to a unique
-    // user ID, constrained to `maxPlayers` number of players.
-    let pollPlayers = messages
-      .where(
-        (e) => e.text && e.text.toLowerCase().match(/\byes\b|dta/i) != null,
-      )
-      //.where((e) => e.user !== this.self_id) (bot messages excluded by subtype)
-      .map((e) => e.user);
-    timeExpired.connect();
+    const formatMessage = (t) => `Respond with *'yes'* in this channel${M.timer(t)}.\n\nPlayers joined (${players.length}):* ${players.map(M.formatAtUser).join(", ") || "_None yet_"}`
 
-    let newPlayerStream =
-      rx.Observable.merge(pollPlayers).takeUntil(timeExpired);
-
-    return newPlayerStream
-      .bufferWithTime(300)
-      .reduce((players: string[], newPlayers: string[]) => {
-        if (newPlayers.length) {
-          let messages = [];
-          let joinedAlready = [];
-          newPlayers = newPlayers.filter((player) => {
-            if (players.find((p) => p === player)) {
-              joinedAlready.push(player);
-              return false;
-            }
-            return true;
-          });
-          if (joinedAlready.length) {
-            messages.push(
-              `${M.pp(joinedAlready)} ${
-                joinedAlready.length > 1 ? "are" : "is"
-              } already in the game.`,
-            );
-          }
-          if (players.length + newPlayers.length > Avalon.MAX_PLAYERS) {
-            let excessPlayers = newPlayers.slice(Avalon.MAX_PLAYERS);
-            newPlayers = newPlayers.slice(0, Avalon.MAX_PLAYERS);
-            messages.push(
-              `${M.pp(newPlayers)} ${
-                newPlayers.length > 1 ? "have" : "has"
-              } joined the game.`,
-            );
-            messages.push(
-              `${M.pp(excessPlayers)} cannot join because game is full.`,
-            );
-          } else if (newPlayers.length) {
-            messages.push(
-              `${M.pp(newPlayers)} ${
-                newPlayers.length > 1 ? "have" : "has"
-              } joined the game.`,
-            );
-          }
-          players.splice(0, 0, ...newPlayers);
-
-          if (players.length > 1 && players.length < Avalon.MAX_PLAYERS) {
-            messages.push(
-              `${players.length} players ${M.pp(players)} are in the game so far.`,
-            );
-          } else if (players.length == Avalon.MAX_PLAYERS) {
-            messages.push(
-              `Maximum ${players.length} players ${M.pp(
-                players,
-              )} are in the game so far.`,
-            );
-          }
-          this.bolt.client.chat.postMessage({
-            text: messages.join("\n"),
+    // Handler for collecting players
+    const amessageHandler = async ({event}) => {
+      if (
+        event.channel === channel.id &&
+        event.text &&
+        event.text.toLowerCase().match(/\byes\b|dta/i) &&
+        !playerSet.has(event.user)
+      ) {
+        if(playerSet.size < Avalon.MAX_PLAYERS) {
+          playerSet.add(event.user);
+          players.push(event.user);
+        }
+        else {
+          await this.bolt.client.chat.postMessage({
+            text: `Couldn't add ${M.formatAtUser(event.user)} because the game is already full.`,
             channel: channel.id,
           });
         }
-        return players;
-      }, [])
-      .map((players) => {
-        return { channel: channel, players: players };
-      });
+      }
+    };
+
+    // Listen for messages
+    const listenerId = this.bolt.addMessageListener(amessageHandler);
+
+    const payload = await this.bolt.client.chat.postMessage({
+      text: formatMessage(timeout),
+      channel: channel.id,
+    });
+
+    // Countdown and update message
+    await new Promise<void>((resolve) => {
+      resolveFn = resolve;
+      intervalId = setInterval(() => {
+        countdown--;
+        this.api.chat.update({
+          ts: payload.ts,
+          channel: channel.id,
+          text: `${formatMessage(countdown)}`
+        });
+        if (countdown <= 0) {
+          clearInterval(intervalId);
+          resolve();
+        }
+      }, 1000);
+    });
+
+    this.bolt.removeMessageListener(listenerId);
+
+    return { channel, players };
   }
 
   // Private: Starts and manages a new Avalon game.
@@ -313,18 +286,19 @@ export class Bot {
   // messages - An {Observable} representing messages posted to the channel
   // channel - The channel where the game will be played
   //
-  // Returns an {Observable} that signals completion of the game
-  startGame(players, messages, channel) {
+  // Returns a {Promise} that signals completion of the game
+  async startGame(players, channel) {
+
     if (players.length < Avalon.MIN_PLAYERS) {
       // TODO: send status back to webpage
       this.bolt.client.chat.postMessage({
         text: `Not enough players for a game. Avalon requires ${Avalon.MIN_PLAYERS}-${Avalon.MAX_PLAYERS} players.`,
         channel: channel.id,
       });
-      return rx.Observable.empty();
+      return Promise.resolve();
     }
 
-    const configuringPlayer = players[0];
+    const configuringPlayer = players[Math.floor(Math.random() * players.length)];
 
     this.bolt.client.chat.postMessage({
       text: `${M.formatAtUser(configuringPlayer)} will now choose the roles in play for this game.`,
@@ -369,36 +343,42 @@ export class Bot {
       [validateValidRoleChoice]
     );
 
-    return rx.Observable.fromPromise(roleChoice)
-    .map((role_indexes: [number]) => role_indexes.map(idx => configurableRoles[idx]))
-    .map(role_names => {
+    try {
+      // Wait for role choice
+      const role_indexes = await roleChoice as number[];
+      const role_names = role_indexes.map(idx => configurableRoles[idx]);
+      
+      // Post role selection message
       this.bolt.client.chat.postMessage({
         text: `${M.formatAtUser(configuringPlayer)} chose:\n\n${role_names.map(name => `${Avalon.ROLES[name]}`).join("\n")}\n\nGame starting now!`,
         channel: channel.id,
-      })
+      });
 
-      role_names.map(role => this.gameConfig.specialRoles.push(role));
+      // Add roles to game config
+      role_names.forEach(role => this.gameConfig.specialRoles.push(role));
 
-      let game = (this.game = new Avalon(gameUx, this.api, messages, channel, players));
+      // Create and configure game
+      // NOTE: Avalon should create its own messages object in its constructor
+      let game = (this.game = new Avalon(gameUx, this.api, this.bolt, channel, players));
       _.extend(game, this.gameConfig);
 
-      return game
-    })
-    .map(game => {
-      return SlackApiRx.openDms(this.api, players)
-    })
-    .mergeAll()
-    .flatMap((playerDms) =>
-       {
-         return rx.Observable.timer(2000).flatMap(() => {
-           return this.game.start(playerDms)
-         })
-       }
-    )
-    .do(() => {
-      // quitGameDisp.dispose();
+      // Open DMs for all players
+      const playerDms = await SlackApiRx.openDms(this.api, players);
+      
+      // Wait 2 seconds then start the game
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Start the game
+      await this.game.start(playerDms);
+      
+      // Clean up
       this.game = null;
-    });
+      
+    } catch (error) {
+      console.error('Error starting game:', error);
+      this.game = null;
+      throw error;
+    }
 
     // TODO allow quitting again
     //    // Listen for messages directed at the bot containing 'quit game.'
@@ -416,10 +396,6 @@ export class Bot {
     //      });
   }
 
-  // Private: Adds AI-based players (primarily for testing purposes).
-  //
-  // players - The players participating in the game
-  addBotPlayers(players) {}
 
   welcomeMessage() {
     return `Hi! I can host Avalon games. Type \`play avalon\` to play.`;

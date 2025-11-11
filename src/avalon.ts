@@ -1,16 +1,12 @@
 "use strict";
 
 import { webApi } from "@slack/bolt";
-import { MessageAttachment } from "@slack/types";
 
-import { GameUILayer } from "./game-ui-layer";
+import { GameUILayer } from "./game-ui-layer.js";
 
-const rx = require("rx");
 const _ = require("lodash");
 const M = require("./message-helpers");
 require("string_score");
-
-rx.config.longStackSupport = true;
 
 export class Avalon {
   players: any;
@@ -19,9 +15,7 @@ export class Avalon {
   api: webApi.WebClient;
   messages: any;
   date: any;
-  scheduler: any;
   channel: any;
-  gameEnded;
   isRunning;
   questNumber;
   rejectCount;
@@ -32,6 +26,9 @@ export class Avalon {
   subscription;
   resistance;
   questPlayers;
+  bolt: any; // Added for message listening
+  private _gameEnded: boolean = false;
+  private currentLeaderIndex: number;
 
   static MIN_PLAYERS = 5;
 
@@ -144,19 +141,17 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(gameUx, api, messages, channel, players, scheduler) {
-    scheduler = scheduler || rx.Scheduler.timeout;
+  constructor(gameUx, api, bolt, channel, players) {
     this.api = api;
-    this.messages = messages;
     this.gameUx = gameUx;
+    this.bolt = bolt;
 
     this.channel = channel;
     this.players = players.map((id) => {
       return { id: id };
     });
-    this.scheduler = scheduler;
-    this.gameEnded = new rx.Subject();
     _.extend(this, Avalon.DEFAULT_CONFIG);
+    this._gameEnded = false;
   }
 
   start(playerDms, timeBetweenRounds) {
@@ -167,6 +162,7 @@ export class Avalon {
     this.progress = [];
     this.playerDms = playerDms;
     this.date = new Date();
+    this.currentLeaderIndex = 0;
 
     let players = (this.players = this.playerOrder(this.players));
     let assigns = this.getRoleAssigns(
@@ -261,13 +257,13 @@ export class Avalon {
       );
     }
 
-    this.subscription = rx.Observable.return(true)
-      .flatMap(() => this.playRound())
-      .repeat()
-      .takeUntil(this.gameEnded)
-      .subscribe();
-
-    return this.gameEnded;
+    this._gameEnded = false;
+    (async () => {
+      while (!this._gameEnded) {
+        await this.playRound();
+      }
+    })();
+    return Promise.resolve();
   }
 
   getRoleAssigns(roles) {
@@ -289,17 +285,15 @@ export class Avalon {
   }
 
   quit() {
-    this.gameEnded.onNext(true);
-    this.gameEnded.onCompleted();
+    this._gameEnded = true;
     this.isRunning = false;
-    this.subscription.dispose();
     // this.endTimeout = setTimeout(() => this.chatSubscription.dispose(), 60000);
   }
 
-  playRound() {
-    return rx.Observable.fromArray(this.players).concatMap((player) =>
-      this.deferredActionForPlayer(player),
-    );
+  async playRound() {
+    const leader = this.players[this.currentLeaderIndex];
+    await this.deferredActionForPlayer(leader);
+    this.currentLeaderIndex = (this.currentLeaderIndex + 1) % this.players.length;
   }
 
   revealRoles(excludeMerlin) {
@@ -340,7 +334,7 @@ export class Avalon {
   }
 
   broadcast(message, color?, special?) {
-    let attachment: MessageAttachment = {
+    let attachment: any = {
       fallback: message,
       text: message,
       mrkdwn_in: ["pretext", "text"],
@@ -361,65 +355,47 @@ export class Avalon {
     });
   }
 
-  dmMessages(player) {
-    return this.messages.where((e) => e.channel == this.playerDms[player.id]);
-  }
-
   questAssign() {
     return Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
       this.questNumber
     ];
   }
 
-  deferredActionForPlayer(player, timeToPause?) {
+  async deferredActionForPlayer(player, timeToPause?) {
     timeToPause = timeToPause || 3000;
-    return rx.Observable.defer(() => {
-      return rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
-        let questAssign = this.questAssign();
-        let f = "";
-        if (questAssign.f > 1) {
-          f = "(2 fails required) ";
-        }
-        let message = ` ${questAssign.n} players ${f}to go on the ${
-          Avalon.ORDER[this.questNumber]
-        } quest.`;
-        let status = `Quest progress: ${this.getStatus(true)}\n`;
-        let order = this.players.map((p) =>
-          p.id == player.id
-            ? `*${M.formatAtUser(p.id)}*`
-            : M.formatAtUser(p.id),
-        );
-        status += `Player order: ${order}\n`;
+    await new Promise(resolve => setTimeout(resolve, timeToPause));
 
-        const full_message = `${status}${M.formatAtUser(
-          player.id,
-        )} will choose${message} (attempt number ${this.rejectCount + 1})`;
+    const questAssign = this.questAssign();
+    let f = "";
+    if (questAssign.f > 1) {
+      f = "(2 fails required) ";
+    }
+    let message = ` ${questAssign.n} players ${f}to go on the ${
+      Avalon.ORDER[this.questNumber]
+    } quest.`;
+    let status = `Quest progress: ${this.getStatus(true)}\n`;
+    let order = this.players.map((p) =>
+      p.id == player.id
+        ? `*${M.formatAtUser(p.id)}*`
+        : M.formatAtUser(p.id),
+    );
+    status += `Player order: ${order}\n`;
 
-        this.broadcast(full_message, "#a60", "");
+    const full_message = `${status}${M.formatAtUser(
+      player.id,
+    )} will choose${message} (attempt number ${this.rejectCount + 1})`;
 
-        return this.choosePlayersForQuest(player).concatMap((successful) => {
-          if (successful) {
-            this.rejectCount = 0;
-            return rx.Observable.defer(() =>
-              rx.Observable.timer(timeToPause, this.scheduler).flatMap(() => {
-                return this.runQuest(this.questPlayers, player);
-              }),
-            );
-          }
-          this.rejectCount++;
-          if (this.rejectCount >= 5) {
-            this.endGame(
-              `:red_circle: Minions of Mordred win due to the ${
-                Avalon.ORDER[this.questNumber]
-              } quest rejected 5 times!`,
-              "#e00",
-              true,
-            );
-          }
-          return rx.Observable.return(true);
-        });
-      });
-    });
+    this.broadcast(full_message, "#a60", "");
+
+    const successful = await this.choosePlayersForQuest(player);
+    if (successful) {
+      this.rejectCount = 0;
+      await new Promise(resolve => setTimeout(resolve, timeToPause));
+      return await this.runQuest(this.questPlayers, player);
+    }
+    this.rejectCount++;
+
+    return true;
   }
 
   questHistoryMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
@@ -542,9 +518,10 @@ export class Avalon {
     }
   }
 
-  choosePlayersForQuest(player) {
+  async choosePlayersForQuest(player) {
     let questAssign = this.questAssign();
 
+    // Await the player's team choice
     const playerChoice = this.gameUx.pollForDecision(
       this.playerDms[player.id],
       `Choose a team of ${questAssign.n}`,
@@ -554,75 +531,86 @@ export class Avalon {
       questAssign.n,
       questAssign.n,
     );
+    const idxs = await playerChoice as number[];
+    const questPlayers = idxs.map((i) => this.players[i]);
+    this.questPlayers = questPlayers;
 
-    return rx.Observable.fromPromise(playerChoice)
-    .map((idx) => idx.map((i) => this.players[i]))
-    .concatMap((questPlayers) => {
-      this.questPlayers = questPlayers;
+    // Auto-accept teams on the 5th attempt
+    if(this.rejectCount >= 4) {
+      return true;
+    }
 
-      return rx.Observable.forkJoin(
-        this.players.map(p => {
-          const posted_message = this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p))
+    // Send voting messages to all players and collect their message timestamps
+    // List of player ids and timestamps
+    // This is necessary, rather than a map, because we use the same player id multiple times in dev
+    const player_messages: Array<[{id: string}, string]> = [];
+    await Promise.all(this.players.map(async (p) => {
+      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p));
+      player_messages.push([p, resp.ts]);
+    }));
 
-          return new Promise(resolve => posted_message.then(resp => resolve([p.id, resp.ts])))
-        })
-      )
-      .first()
-      .flatMap(messages => {
-        const player_messages = new Map(messages)
-
-        return rx.Observable.fromArray(this.players)
-        .map((p) => {
-
-          return this.dmMessages(p)
-          .where((e) => e.user === p.id && e.text)
-          .map((e) => e.text.trim().toLowerCase())
-          .where(
-            (text) =>
-            text.score("approve", 0.5) > 0.5 ||
-              text.score("reject", 0.5) > 0.5,
-          )
-          .map((text) => {
-            return { player: p, approve: text.score("approve", 0.5) > 0.5 };
-          })
-          .take(1);
-        })
-        .mergeAll()
-        .take(this.players.length)
-        .reduce(
-          (acc, vote) => {
-            // TODO: bufferWithTime on this
-            if (vote.approve) {
-              acc.approved.push(vote.player);
-            } else {
-              acc.rejected.push(vote.player);
-            }
-            if (acc.approved.length + acc.rejected.length < this.players.length) {
-              let voted = acc.approved.concat(acc.rejected);
-              let remaining = this.players.length - voted.length;
-
-              this.players.map(p => {
-                let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p, acc.approved, acc.rejected)
-
-                this.api.chat.update({...updated_version, ts: player_messages.get(p.id) as string})
-              })
-            }
-            return acc;
-          },
-          { approved: [], rejected: [] },
-        ).map(({approved, rejected}) => {
-          const successful = approved.length > rejected.length;
-
-          this.players.map(p => {
-            let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questNumber, p, approved, rejected)
-
-            this.api.chat.update({...updated_version, ts: player_messages.get(p.id) as string})
-          })
-
-          return successful
-        }) ;
+    // Helper to update voting status for all players
+    const updateVotingStatus = () => {
+      player_messages.forEach(([p, ts]) => {
+        let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p, approveVotes, rejectVotes);
+        this.api.chat.update({ ...updated_version, ts: ts });
       })
+    };
+
+    // Collect votes from button clicks using addActionListener
+    const approveVotes = [];
+    const rejectVotes = [];
+    const votedPlayers = new Set();
+    const voteResolvers = new Map(); // Store promise resolvers for each player
+
+    // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
+    const uniquePlayers: {id: string}[] = [...new Set(this.players.map((p: any) => p.id))].map((id: string) => this.players.find((p: any) => p.id === id));
+    
+    // Create promises for each player's vote
+    const votePromises = uniquePlayers.map((p: {id: string}) => {
+      return new Promise(resolve => {
+        voteResolvers.set(p.id, resolve);
+      });
+    });
+
+    // Register a single action listener for all button clicks
+    const actionListenerId = this.bolt.addActionListener("quest-team-vote", async (context) => {
+      const userId = context.body.user.id;
+      const action = context.body.actions[0];
+      const voteValue = action.value; // "approve" or "reject"
+      
+      if (votedPlayers.has(userId)) return; // Already voted
+      
+      const player = uniquePlayers.find(p => p.id === userId);
+      if (!player) return; // Not a valid player
+      
+      votedPlayers.add(userId);
+      const approve = voteValue === "approve";
+      
+      if (approve) approveVotes.push(player);
+      else rejectVotes.push(player);
+      
+      updateVotingStatus();
+      
+      // Resolve the promise for this player
+      const resolver = voteResolvers.get(userId);
+      if (resolver) {
+        resolver({ player, approve });
+      }
+    });
+
+    const votes = await Promise.all(votePromises);
+
+    // Clean up the action listener
+    this.bolt.removeActionListener(actionListenerId);
+
+    // After all votes are in, update quest history for all players
+    player_messages.map(([p, ts]) => {
+      let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questNumber, p, approveVotes, rejectVotes);
+      this.api.chat.update({ ...updated_version, ts: ts });
     })
+
+    return approveVotes.length > rejectVotes.length;
   }
 
   getStatus(current) {
@@ -736,173 +724,179 @@ export class Avalon {
     }
   }
 
-  runQuest(questPlayers, leader) {
-    return rx.Observable.forkJoin(
-      this.players.map(p => {
-        const message = this.composeQuestMessage(p, questPlayers, leader)
-        const posted_message = this.api.chat.postMessage(message)
-        return new Promise(resolve => posted_message.then(resp => resolve([p.id, resp.ts])))
-      })
-    )
-      .flatMap(messages => {
-        const player_messages = new Map(messages)
-        let runners = 0;
-        return rx.Observable.fromArray(questPlayers)
-          .map((player) => {
-            return this.dmMessages(player)
-              .where((e) => e.user === player.id && e.text)
-              .map((e) => e.text.trim().toLowerCase())
-              .where(
-                (text) =>
-                  text.score("succeed", 0.5) > 0.5 || text.score("fail", 0.5) > 0.5,
-              )
-              .map((text) => {
-                return { player: player, fail: text.score("fail", 0.5) > 0.5 };
-              })
-              .take(1);
-          })
-          .mergeAll()
-          .take(questPlayers.length)
-          .reduce(
-            (acc, questResult) => {
-              if (questResult.fail) {
-                acc.failed.push(questResult.player);
-              } else {
-                acc.succeeded.push(questResult.player);
-              }
+  async runQuest(questPlayers, leader) {
+    // 1. Send quest messages to all players and collect their message timestamps
+    const player_messages = new Map();
+    await Promise.all(this.players.map(async (p) => {
+      const message = this.composeQuestMessage(p, questPlayers, leader);
+      const resp = await this.api.chat.postMessage(message);
+      player_messages.set(p.id, resp.ts);
+    }));
 
-              this.players.map(p => {
-                const message = this.composeQuestMessage(p, questPlayers, leader, [...acc.failed.map(x => x.id), ...acc.succeeded.map(x => x.id)]);
-                this.api.chat.update({...message, ts: player_messages.get(p.id) as string})
-              })
+    // 2. For each questing player, wait for their DM response (succeed/fail)
+    const failed = [];
+    const succeeded = [];
+    const playerIdsWhoHaveQuested = new Set();
 
-              return acc;
-            },
-            { succeeded: [], failed: [] },
-          )
-          .map((questResults) => {
-            let questAssign = this.questAssign();
-            if (questResults.failed.length > 0) {
-              if (questResults.failed.length < questAssign.f) {
-                this.progress.push("good");
-                this.broadcast(
-                  `${M.pp(questPlayers)} succeeded the ${
-                    Avalon.ORDER[this.questNumber]
-                  } quest with ${questResults.failed.length} fail!`,
-                  "#08e",
-                );
-              } else {
-                this.progress.push("bad");
-                this.broadcast(
-                  `${questResults.failed.length} in (${M.pp(
-                    questPlayers,
-                  )}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
-                  "#e00",
-                );
-              }
-            } else {
-              this.progress.push("good");
-              this.broadcast(
-                `${M.pp(questPlayers)} succeeded the ${
-                  Avalon.ORDER[this.questNumber]
-                } quest!`,
-                "#08e",
-              );
-            }
-            this.questNumber++;
-            let score = { good: 0, bad: 0 };
-            for (let res of this.progress) {
-              score[res]++;
-            }
-            return score;
-          })
-      })
-          .concatMap((score) => {
-            if (score.bad == 3) {
-              this.endGame(
-                `:red_circle: Minions of Mordred win by failing 3 quests!`,
-                "#e00",
-                false
-              );
-            } else if (score.good == 3) {
-              let merlin = this.players.filter((player) => player.role == "merlin");
-              if (!merlin.length) {
-                this.endGame(
-                  `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
-                  "#08e",
-                  false
-                );
-                return rx.Observable.return(true);
-              }
-              let assassin = this.assassin;
-              merlin = merlin[0];
+    // Use action listener for quest votes
+    const questVoteResolvers = new Map();
+    const questVotePromises = new Map();
 
-              let status = `Quest Results: ${this.getStatus(false)}\n`;
-              this.broadcast(
-                `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
-              );
-              return rx.Observable.defer(() => {
-                return rx.Observable.timer(1000, this.scheduler).flatMap(() => {
-                  this.broadcast(
-                    `*${M.formatAtUser(
-                      assassin.id,
-                    )}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN.`,
-                    "#e00",
-                  );
+    questPlayers.map((player) => {
+      const promise = new Promise(resolve => {
+        questVoteResolvers.set(player.id, resolve);
+      });
+      questVotePromises.set(player.id, promise);
+    });
 
-                  const killablePlayers = this.players.filter(
-                    (p) => p.id !== assassin.id,
-                  );
+    // Register a single action listener for all quest succeed/fail button clicks
+    const questActionListenerId = this.bolt.addActionListener("quest-success-vote", async (context) => {
+      const userId = context.body.user.id;
+      const action = context.body.actions[0];
+      const voteValue = action.value; // "succeed" or "fail"
 
-                  const playerChoice = this.gameUx.pollForDecision(
-                    this.playerDms[assassin.id],
-                    `Choose who to kill`,
-                    killablePlayers.map((player) => M.formatAtUser(player)),
-                    "Kill",
-                    (user_id) => user_id === assassin.id,
-                    1,
-                    1,
-                  );
+      // Only allow questing players who haven't voted yet
+      if (!questPlayers.some(p => p.id === userId)) return;
+      if (playerIdsWhoHaveQuested.has(userId)) return;
 
-                  return rx.Observable.return(true).flatMap(() => {
-                    return rx.Observable.fromPromise(playerChoice)
-                      .map((idx) => killablePlayers[idx[0]])
-                      .do((accused) => {
-                        if (accused.role != "merlin") {
-                          this.broadcast(
-                            `${status}:crossed_swords:${M.formatAtUser(
-                              assassin.id,
-                            )} chose ${M.formatAtUser(
-                              accused.id,
-                            )} as MERLIN, not :angel:${M.formatAtUser(
-                              merlin.id,
-                            )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
-                              true,
-                            )}`,
-                            "#08e",
-                            "end",
-                          );
-                        } else {
-                          this.broadcast(
-                            `${status}:crossed_swords:${M.formatAtUser(
-                              assassin.id,
-                            )} chose :angel:${M.formatAtUser(
-                              accused.id,
-                            )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
-                              true,
-                            )}`,
-                            "#e00",
-                            "end",
-                          );
-                        }
-                        this.quit();
-                      });
-                  });
-                });
-              });
-            }
-            return rx.Observable.return(true);
-          });
+      playerIdsWhoHaveQuested.add(userId);
+      const player = questPlayers.find(p => p.id === userId);
+      const fail = voteValue === "fail";
+      if (fail) failed.push(player);
+      else succeeded.push(player);
+
+      // Update quest status for all players
+      this.players.forEach(p => {
+        const message = this.composeQuestMessage(p, questPlayers, leader, Array.from(playerIdsWhoHaveQuested));
+        this.api.chat.update({ ...message, ts: player_messages.get(p.id) });
+      });
+
+      // Resolve the promise for this player
+      const resolver = questVoteResolvers.get(userId);
+      if (resolver) {
+        resolver({ player, fail });
+      }
+    });
+
+    await Promise.all(questVotePromises.values());
+
+    // Clean up the action listener
+    this.bolt.removeActionListener(questActionListenerId);
+
+    // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
+    let questAssign = this.questAssign();
+    let questResult;
+    if (failed.length > 0) {
+      if (failed.length < questAssign.f) {
+        this.progress.push("good");
+        this.broadcast(
+          `${M.pp(questPlayers)} succeeded the ${Avalon.ORDER[this.questNumber]} quest with ${failed.length} fail!`,
+          "#08e",
+        );
+        questResult = "good";
+      } else {
+        this.progress.push("bad");
+        this.broadcast(
+          `${failed.length} in (${M.pp(questPlayers)}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
+          "#e00",
+        );
+        questResult = "bad";
+      }
+    } else {
+      this.progress.push("good");
+      this.broadcast(
+        `${M.pp(questPlayers)} succeeded the ${Avalon.ORDER[this.questNumber]} quest!`,
+        "#08e",
+      );
+      questResult = "good";
+    }
+    this.questNumber++;
+    let score = { good: 0, bad: 0 };
+    for (let res of this.progress) {
+      score[res]++;
+    }
+    // 4. Await the endgame evaluation
+    return await this.evaluateEndGame(score);
+  }
+
+  async evaluateEndGame(score) {
+    if (score.bad == 3) {
+      this.endGame(
+        `:red_circle: Minions of Mordred win by failing 3 quests!`,
+        "#e00",
+        false
+      );
+      return Promise.resolve(true);
+    } else if (score.good == 3) {
+      let merlin = this.players.filter((player) => player.role == "merlin");
+      if (!merlin.length) {
+        this.endGame(
+          `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
+          "#08e",
+          false
+        );
+        return Promise.resolve(true);
+      }
+      let assassin = this.assassin;
+      merlin = merlin[0];
+      let status = `Quest Results: ${this.getStatus(false)}\n`;
+      this.broadcast(
+        `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
+      );
+      const killablePlayers = this.players.filter((p) => p.id !== assassin.id);
+      await this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  }
+
+  async assassinMerlinKill(status, assassin, merlin, killablePlayers) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    this.broadcast(
+      `*${M.formatAtUser(assassin.id)}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN.`,
+      "#e00",
+    );
+
+    const playerChoice = this.gameUx.pollForDecision(
+      this.playerDms[assassin.id],
+      `Choose who to kill`,
+      killablePlayers.map((player) => M.formatAtUser(player)),
+      "Kill",
+      (user_id) => user_id === assassin.id,
+      1,
+      1,
+    );
+    const idx = await playerChoice;
+    const accused = killablePlayers[idx[0]];
+    if (accused.role != "merlin") {
+      this.broadcast(
+        `${status}:crossed_swords:${M.formatAtUser(
+          assassin.id,
+        )} chose ${M.formatAtUser(
+          accused.id,
+        )} as MERLIN, not :angel:${M.formatAtUser(
+          merlin.id,
+        )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
+          true,
+        )}`,
+        "#08e",
+        "end",
+      );
+    } else {
+      this.broadcast(
+        `${status}:crossed_swords:${M.formatAtUser(
+          assassin.id,
+        )} chose :angel:${M.formatAtUser(
+          accused.id,
+        )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
+          true,
+        )}`,
+        "#e00",
+        "end",
+      );
+    }
+    this.quit();
+    return Promise.resolve(true);
   }
 }
 
