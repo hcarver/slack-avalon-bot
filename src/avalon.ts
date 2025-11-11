@@ -394,15 +394,7 @@ export class Avalon {
       return await this.runQuest(this.questPlayers, player);
     }
     this.rejectCount++;
-    if (this.rejectCount >= 5) {
-      this.endGame(
-        `:red_circle: Minions of Mordred win due to the ${
-          Avalon.ORDER[this.questNumber]
-        } quest rejected 5 times!`,
-        "#e00",
-        true,
-      );
-    }
+
     return true;
   }
 
@@ -542,6 +534,11 @@ export class Avalon {
     const idxs = await playerChoice as number[];
     const questPlayers = idxs.map((i) => this.players[i]);
     this.questPlayers = questPlayers;
+
+    // Auto-accept teams on the 5th attempt
+    if(this.rejectCount >= 4) {
+      return true;
+    }
 
     // Send voting messages to all players and collect their message timestamps
     // List of player ids and timestamps
