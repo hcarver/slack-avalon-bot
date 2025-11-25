@@ -1064,25 +1064,16 @@ export class Avalon {
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
         this.progress.push("good");
-        this.broadcast(
-          `${M.pp(questPlayers)} succeeded the ${Avalon.ORDER[this.questNumber]} quest with ${failed.length} fail!`,
-          "#08e",
-        );
+        this.broadcastQuestResult(questPlayers, "success", failed.length, 0);
         questResult = "good";
       } else {
         this.progress.push("bad");
-        this.broadcast(
-          `${failed.length} in (${M.pp(questPlayers)}) failed the ${Avalon.ORDER[this.questNumber]} quest!`,
-          "#e00",
-        );
+        this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f);
         questResult = "bad";
       }
     } else {
       this.progress.push("good");
-      this.broadcast(
-        `${M.pp(questPlayers)} succeeded the ${Avalon.ORDER[this.questNumber]} quest!`,
-        "#08e",
-      );
+      this.broadcastQuestResult(questPlayers, "success", 0, 0);
       questResult = "good";
     }
     this.questNumber++;
@@ -1092,6 +1083,80 @@ export class Avalon {
     }
     // 4. Await the endgame evaluation
     return await this.evaluateEndGame(score);
+  }
+
+  broadcastQuestResult(questPlayers, result: "success" | "failure", failCount: number, failsRequired: number) {
+    const blocks: any[] = [];
+    
+    // Header
+    const questName = Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1);
+    const resultEmoji = result === "success" ? "✅" : "❌";
+    const resultText = result === "success" ? "SUCCESS" : "FAILED";
+    
+    blocks.push({
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: `${resultEmoji} ${questName} Quest ${resultText}`,
+        emoji: true
+      }
+    });
+
+    // Quest team
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Quest Team:* ${M.pp(questPlayers)}`
+      }
+    });
+
+    // Result details
+    let resultDetails = '';
+    if (result === "success") {
+      if (failCount === 0) {
+        resultDetails = `🎉 *All team members succeeded!*\nThe quest passes.`;
+      } else {
+        resultDetails = `⚠️ *${failCount} fail vote${failCount > 1 ? 's' : ''} received*\nNot enough to fail the quest (${failsRequired} required). The quest succeeds!`;
+      }
+    } else {
+      resultDetails = `💀 *${failCount} fail vote${failCount > 1 ? 's' : ''} received*\n${failsRequired > 1 ? `${failsRequired} fails were required. ` : ''}The quest fails!`;
+    }
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: resultDetails
+      }
+    });
+
+    // Updated quest progress
+    blocks.push({ type: 'divider' });
+    blocks.push(...this.getQuestProgressBlocks(false));
+
+    // Score update
+    let score = { good: 0, bad: 0 };
+    for (let res of this.progress) {
+      score[res]++;
+    }
+    
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: `Current Score: ${score.good} quest${score.good !== 1 ? 's' : ''} succeeded, ${score.bad} quest${score.bad !== 1 ? 's' : ''} failed`
+      }]
+    });
+
+    // Send to all players
+    this.players.forEach(p => {
+      this.api.chat.postMessage({
+        channel: this.playerDms[p.id],
+        blocks: blocks,
+        text: `${questName} Quest ${resultText}`
+      });
+    });
   }
 
   async evaluateEndGame(score) {
