@@ -373,19 +373,47 @@ export class Avalon {
     let message = ` ${questAssign.n} players ${f}to go on the ${
       Avalon.ORDER[this.questNumber]
     } quest.`;
-    let status = `Quest progress: ${this.getStatus(true)}\n`;
+    
     let order = this.players.map((p) =>
       p.id == player.id
         ? `*${M.formatAtUser(p.id)}*`
         : M.formatAtUser(p.id),
     );
-    status += `Player order: ${order}\n`;
 
-    const full_message = `${status}${M.formatAtUser(
-      player.id,
-    )} will choose${message} (attempt number ${this.rejectCount + 1})`;
+    const statusBlocks = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `${Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1)} Quest - Team Selection`,
+          emoji: true
+        }
+      },
+      ...this.getQuestProgressBlocks(true),
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${M.formatAtUser(player.id)}* will choose${message}\n*Attempt:* ${this.rejectCount + 1}/5`
+        }
+      },
+      {
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `Player order: ${order.join(', ')}`
+        }]
+      },
+      { type: 'divider' }
+    ];
 
-    this.broadcast(full_message, "#a60", "");
+    this.players.forEach(p => {
+      this.api.chat.postMessage({
+        channel: this.playerDms[p.id],
+        blocks: statusBlocks,
+        text: `${M.formatAtUser(player.id)} will choose${message} (attempt number ${this.rejectCount + 1})`
+      });
+    });
 
     const successful = await this.choosePlayersForQuest(player);
     if (successful) {
@@ -565,7 +593,7 @@ export class Avalon {
 
     // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
     const uniquePlayers: {id: string}[] = [...new Set(this.players.map((p: any) => p.id))].map((id: string) => this.players.find((p: any) => p.id === id));
-    
+
     // Create promises for each player's vote
     const votePromises = uniquePlayers.map((p: {id: string}) => {
       return new Promise(resolve => {
@@ -578,20 +606,20 @@ export class Avalon {
       const userId = context.body.user.id;
       const action = context.body.actions[0];
       const voteValue = action.value; // "approve" or "reject"
-      
+
       if (votedPlayers.has(userId)) return; // Already voted
-      
+
       const player = uniquePlayers.find(p => p.id === userId);
       if (!player) return; // Not a valid player
-      
+
       votedPlayers.add(userId);
       const approve = voteValue === "approve";
-      
+
       if (approve) approveVotes.push(player);
       else rejectVotes.push(player);
-      
+
       updateVotingStatus();
-      
+
       // Resolve the promise for this player
       const resolver = voteResolvers.get(userId);
       if (resolver) {
@@ -645,25 +673,112 @@ export class Avalon {
     return status.join(",");
   }
 
+  getQuestProgressBlocks(current = false) {
+    const blocks = [];
+    const questParts = [];
+
+    for (let i = 0; i < Avalon.ORDER.length; i++) {
+      const questAssign = Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
+      const questName = Avalon.ORDER[i].charAt(0).toUpperCase() + Avalon.ORDER[i].slice(1);
+      const teamSize = questAssign.n;
+      const failsRequired = questAssign.f > 1 ? `*` : '';
+      
+      let emoji = '';
+      
+      if (i < this.progress.length) {
+        // Completed quest
+        emoji = this.progress[i] === 'good' ? ':large_blue_circle:' : ':red_circle:';
+      } else if (current && i === this.questNumber) {
+        // Current quest
+        emoji = ':black_circle:';
+      } else {
+        // Future quest
+        emoji = ':white_circle:';
+      }
+
+      questParts.push(`${emoji} ${questName} (${teamSize}${failsRequired})`);
+    }
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Quest Progress:*\n${questParts.join('  •  ')}`
+      }
+    });
+
+    // Add legend
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: `🔵 Success  •  🔴 Failed  •  ⚫ Current  •  ⚪ Pending  •  * = 2 fails required`
+      }]
+    });
+
+    // Add reject counter if applicable
+    if (current && this.rejectCount > 0) {
+      blocks.push({
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `:warning: Team rejected ${this.rejectCount} time${this.rejectCount > 1 ? 's' : ''}. ${5 - this.rejectCount} attempt${5 - this.rejectCount > 1 ? 's' : ''} remaining before auto-accept.`
+        }]
+      });
+    }
+
+    return blocks;
+  }
+
   composeQuestMessage(player, questPlayers, leader, playerIdsWhoHaveQuested=[]) {
-    let message = `${M.pp(questPlayers)} are going on the ${
-      Avalon.ORDER[this.questNumber]
-    } quest.`;
-    message += `\nCurrent quest progress: ${this.getStatus(true)}`;
     let order = this.players.map((p) =>
       p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
     );
-    message += `\nPlayer order: ${order}`;
+
+    const header_blocks = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `${Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1)} Quest - In Progress`,
+          emoji: true
+        }
+      },
+      ...this.getQuestProgressBlocks(true),
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Quest Team:* ${M.pp(questPlayers)}`
+        }
+      },
+      {
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `Player order: ${order.join(', ')}`
+        }]
+      },
+      { type: 'divider' }
+    ];
 
     const summary_blocks = []
     if(questPlayers.length > playerIdsWhoHaveQuested.length) {
-      const still_waiting_on = `Waiting for players: ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.id)))}.`
+      const still_waiting_on = `*Waiting for:* ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.id)))}`
 
       summary_blocks.push({
         type: "section",
         text: {
           type: "mrkdwn",
           text: still_waiting_on
+        }
+      })
+    } else {
+      summary_blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `:white_check_mark: All quest members have submitted their choices!`
         }
       })
     }
@@ -712,15 +827,11 @@ export class Avalon {
 
     return {
       channel: this.playerDms[player.id],
-      blocks: [{
-        type: "section",
-        text: {
-            type: "mrkdwn",
-            text: message
-        }
-      },
-      ...summary_blocks,
-      ...action_blocks]
+      blocks: [
+        ...header_blocks,
+        ...summary_blocks,
+        ...action_blocks
+      ]
     }
   }
 
