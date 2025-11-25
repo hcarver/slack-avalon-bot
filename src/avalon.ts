@@ -214,47 +214,13 @@ export class Avalon {
 
     let knownEvils = evils.filter((player) => player.role != "oberon");
     for (let player of this.players) {
-      let message = `You are ${Avalon.ROLES[player.role]}`;
-      let extra_info = "";
-
-      if (this.assassin.id == player.id && player.role != "assassin") {
-        extra_info += "You are also :crossed_swords: THE ASSASSIN. ";
-      }
-      if (player.role == "merlin") {
-        let evilButMordred = evils.filter((p) => p.role != "mordred");
-        if (evilButMordred.length == evils.length) {
-          extra_info = `${M.pp(evils)} are evil.`;
-        } else {
-          extra_info = `. ${M.pp(evilButMordred)} are evil. MORDRED is hidden.`;
-        }
-      } else if (player.role == "percival") {
-        let merlins = players.filter(
-          (p) => p.role == "morgana" || p.role == "merlin",
-        );
-
-        if (merlins.length == 1) {
-          extra_info = `${M.formatAtUser(merlins[0].id)} is MERLIN`;
-        } else if (merlins.length > 1) {
-          extra_info = `One of ${M.pp(merlins)} is MERLIN, the other is MORGANA.`;
-        }
-      } else if (player.role != "good" && player.role != "oberon") {
-        if (knownEvils.length == evils.length) {
-          extra_info += `${M.pp(knownEvils)} are evil`;
-        } else {
-          extra_info += `${M.pp(knownEvils)} are evil. OBERON is unknown to you.`;
-        }
-      }
-
-      const user_blocks = [...all_player_blocks,
-        { type: "markdown", text: message },
-        { type: "markdown", text: extra_info }
-      ]
-
-      this.gameUx.send_message(
-        this.playerDms[player.id],
-        "Starting Avalon game",
-        user_blocks
-      );
+      const roleBlocks = this.createRoleInfoBlocks(player, players, evils, knownEvils);
+      
+      this.api.chat.postMessage({
+        channel: this.playerDms[player.id],
+        blocks: roleBlocks,
+        text: `You are ${Avalon.ROLES[player.role]}`
+      });
     }
 
     this._gameEnded = false;
@@ -264,6 +230,153 @@ export class Avalon {
       }
     })();
     return Promise.resolve();
+  }
+
+  createRoleInfoBlocks(player, allPlayers, evils, knownEvils) {
+    const blocks: any[] = [];
+    
+    // Header
+    blocks.push({
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: '🎭 Your Role Assignment',
+        emoji: true
+      }
+    });
+
+    // Game setup info
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Game Setup:* ${this.evils.length} evil vs ${this.players.length - this.evils.length} good\n*Total Players:* ${this.players.length}`
+      }
+    });
+
+    blocks.push({ type: 'divider' });
+
+    // Role identity - use different styling based on alignment
+    const isEvil = !["good", "merlin", "percival"].includes(player.role);
+    const roleEmoji = this.getRoleEmoji(player.role);
+    const roleName = this.getRoleName(player.role);
+    const alignment = isEvil ? "🔴 Evil" : "🔵 Good";
+    
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `${roleEmoji} *You are ${roleName}*\n*Alignment:* ${alignment}`
+      }
+    });
+
+    // Assassin notification (if applicable)
+    if (this.assassin.id === player.id && player.role !== "assassin") {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `⚔️ *You are also THE ASSASSIN*\nIf good wins 3 quests, you can try to kill Merlin.`
+        }
+      });
+    }
+
+    // Role-specific information
+    const roleInfo = this.getRoleSpecificInfo(player, allPlayers, evils, knownEvils);
+    if (roleInfo) {
+      blocks.push({ type: 'divider' });
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*🔍 Your Knowledge:*\n${roleInfo}`
+        }
+      });
+    }
+
+    // Role description/objective
+    const roleObjective = this.getRoleObjective(player.role);
+    if (roleObjective) {
+      blocks.push({
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `💡 _${roleObjective}_`
+        }]
+      });
+    }
+
+    return blocks;
+  }
+
+  getRoleEmoji(role: string): string {
+    const emojiMap = {
+      'merlin': '👼',
+      'percival': '👮',
+      'morgana': '👹',
+      'mordred': '😈',
+      'oberon': '👽',
+      'assassin': '⚔️',
+      'bad': '🔴',
+      'good': '🔵'
+    };
+    return emojiMap[role] || '❓';
+  }
+
+  getRoleName(role: string): string {
+    const nameMap = {
+      'merlin': 'MERLIN',
+      'percival': 'PERCIVAL',
+      'morgana': 'MORGANA',
+      'mordred': 'MORDRED',
+      'oberon': 'OBERON',
+      'assassin': 'THE ASSASSIN',
+      'bad': 'a Minion of Mordred',
+      'good': 'a Loyal Servant of Arthur'
+    };
+    return nameMap[role] || role;
+  }
+
+  getRoleSpecificInfo(player, allPlayers, evils, knownEvils): string {
+    if (player.role === "merlin") {
+      let evilButMordred = evils.filter((p) => p.role !== "mordred");
+      if (evilButMordred.length === evils.length) {
+        return `You see all evil players:\n${M.pp(evils)}`;
+      } else {
+        return `You see these evil players:\n${M.pp(evilButMordred)}\n\n⚠️ MORDRED is hidden from you!`;
+      }
+    } else if (player.role === "percival") {
+      let merlins = allPlayers.filter(
+        (p) => p.role === "morgana" || p.role === "merlin"
+      );
+
+      if (merlins.length === 1) {
+        return `${M.formatAtUser(merlins[0].id)} is MERLIN`;
+      } else if (merlins.length > 1) {
+        return `One of these is MERLIN, the other is MORGANA:\n${M.pp(merlins)}`;
+      }
+    } else if (player.role !== "good" && player.role !== "oberon") {
+      if (knownEvils.length === evils.length) {
+        return `Your evil teammates:\n${M.pp(knownEvils)}`;
+      } else {
+        return `Your known evil teammates:\n${M.pp(knownEvils)}\n\n⚠️ OBERON is unknown to you!`;
+      }
+    }
+    return "";
+  }
+
+  getRoleObjective(role: string): string {
+    const objectives = {
+      'merlin': 'Use your knowledge wisely, but don\'t reveal yourself or the Assassin will kill you!',
+      'percival': 'Protect Merlin\'s identity while helping good prevail.',
+      'morgana': 'Pretend to be Merlin to confuse Percival.',
+      'mordred': 'You are hidden from Merlin. Use this to your advantage!',
+      'oberon': 'You work alone. Sow chaos without revealing yourself to other evil players.',
+      'assassin': 'Sabotage quests and identify Merlin for the final kill.',
+      'bad': 'Sabotage quests to make them fail. Work with your evil teammates.',
+      'good': 'Choose teams wisely and make quests succeed!'
+    };
+    return objectives[role] || '';
   }
 
   getRoleAssigns(roles) {
