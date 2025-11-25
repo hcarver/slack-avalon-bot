@@ -427,123 +427,174 @@ export class Avalon {
   }
 
   questHistoryMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
-    let message = `${M.formatAtUser(sendingPlayerId)} nominated ${M.pp(
+    const teamNomination = `${M.formatAtUser(sendingPlayerId)} nominated ${M.pp(
       questingPlayerIds,
-    )} for the ${Avalon.ORDER[questNumber]} quest.`;
+    )} for the ${Avalon.ORDER[questNumber]} quest`;
 
-    const voting_summary = approving_players.length > 0
-    ? (
-      rejecting_players.length > 0
-      ? `approved by ${M.pp(approving_players)}, rejected by ${M.pp(rejecting_players)}`
-      : "everyone accepted the team"
-    )
-    : "everyone rejected the team"
+    const votedCount = approving_players.length + rejecting_players.length;
+    const totalVotes = this.players.length;
 
-    const voting_update =
-      approving_players.length > rejecting_players.length
-        ?  `Team accepted (${voting_summary}).`
-        : `Team rejected (${voting_summary}).`
+    // Build player status list with icons
+    const playerStatusList = this.players.map(p => {
+      if (approving_players.some(ap => ap.id === p.id)) {
+        return `✅ ${M.formatAtUser(p.id)}`;
+      } else if (rejecting_players.some(rp => rp.id === p.id)) {
+        return `❌ ${M.formatAtUser(p.id)}`;
+      } else {
+        return `⬜ ${M.formatAtUser(p.id)}`;
+      }
+    }).join('\n');
+
+    // Determine final result
+    let statusText = '';
+    if (approving_players.length > rejecting_players.length) {
+      statusText = `✅ *Team Accepted* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
+    } else {
+      statusText = `❌ *Team Rejected* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
+    }
 
     return {
       channel: this.playerDms[to_player.id],
-      text: `${message}\n${voting_update}`,
+      text: `${teamNomination} - ${statusText}`,
       blocks: [
         {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `${message}\n${voting_update}`
-          },
+            text: `*${Avalon.ORDER[questNumber].charAt(0).toUpperCase() + Avalon.ORDER[questNumber].slice(1)} Quest - Vote Result*\n${teamNomination}`
+          }
         },
+        {
+          type: "section",
+          text: {
+            type: "mrkdwn",
+            text: statusText
+          }
+        },
+        {
+          type: "section",
+          fields: [
+            {
+              type: "mrkdwn",
+              text: `*Final Votes:*\n${playerStatusList}`
+            }
+          ]
+        }
       ]
     }
   }
 
   voteForQuestMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
-    let message = `${M.formatAtUser(sendingPlayerId)} is nominating ${M.pp(
+    const teamNomination = `${M.formatAtUser(sendingPlayerId)} is nominating ${M.pp(
       questingPlayerIds,
-    )} for the ${Avalon.ORDER[questNumber]} quest (attempt number ${this.rejectCount + 1}).`;
+    )} for the ${Avalon.ORDER[questNumber]} quest`;
 
-    const usersByVoteStatus = Object.groupBy(this.players, ({id}) => (approving_players.map(x=>x.id).includes(id) || rejecting_players.map(x => x.id).includes(id)).toString())
+    const votedCount = approving_players.length + rejecting_players.length;
+    const totalVotes = this.players.length;
+    const allVotesIn = votedCount === totalVotes;
 
-    let voting_update = (usersByVoteStatus["true"] || []).length === 0 ?
-      "No one's voted yet." :
-      `${M.pp(usersByVoteStatus["true"])} voted.` +
-      (!!usersByVoteStatus["false"] ?
-       ` Still waiting on ${M.pp(usersByVoteStatus["false"])}.`:
-       "");
-
-    if(approving_players.length + rejecting_players.length === this.players.length) {
-      if(approving_players.length > rejecting_players.length) {
-        voting_update = `Team accepted (approved by ${M.pp(approving_players)}, rejected by ${M.pp(rejecting_players)}.`
+    // Create progress bar
+    const progressBar = this.createProgressBar(votedCount, totalVotes, 10);
+    
+    // Build player status list with icons
+    const playerStatusList = this.players.map(p => {
+      if (approving_players.some(ap => ap.id === p.id)) {
+        return `✅ ${M.formatAtUser(p.id)}`;
+      } else if (rejecting_players.some(rp => rp.id === p.id)) {
+        return `❌ ${M.formatAtUser(p.id)}`;
+      } else {
+        return `⏳ ${M.formatAtUser(p.id)}`;
       }
-      else {
-        voting_update = `Team rejected (approved by ${M.pp(approving_players)}, rejected by ${M.pp(rejecting_players)}.`
+    }).join('\n');
+
+    // Determine final result or current status
+    let statusText = '';
+    let statusColor = '';
+    
+    if (allVotesIn) {
+      if (approving_players.length > rejecting_players.length) {
+        statusText = `✅ *Team Accepted* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
+        statusColor = 'good';
+      } else {
+        statusText = `❌ *Team Rejected* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
+        statusColor = 'danger';
       }
+    } else {
+      statusText = `🗳️ *Voting in Progress*\n${progressBar} ${votedCount}/${totalVotes} votes received`;
     }
 
-    if(approving_players.map(x => x.id).includes(to_player.id) || rejecting_players.map(x => x.id).includes(to_player.id)) {
-      return {
-        channel: this.playerDms[to_player.id],
-        text: `${message}\n${voting_update}`,
-        blocks: [
+    const hasVoted = approving_players.some(ap => ap.id === to_player.id) || 
+                     rejecting_players.some(rp => rp.id === to_player.id);
+
+    const blocks: any[] = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${Avalon.ORDER[questNumber].charAt(0).toUpperCase() + Avalon.ORDER[questNumber].slice(1)} Quest - Team Vote*\n${teamNomination}\n*Attempt:* ${this.rejectCount + 1}/5`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: statusText
+        }
+      },
+      {
+        type: "section",
+        fields: [
           {
-            type: "section",
-            text: {
-              type: "mrkdwn",
-              text: `${message}\n${voting_update}`
-            },
-          },
+            type: "mrkdwn",
+            text: `*Player Votes:*\n${playerStatusList}`
+          }
         ]
       }
+    ];
+
+    // Add action buttons if player hasn't voted yet
+    if (!hasVoted && !allVotesIn) {
+      blocks.push({
+        type: "actions",
+        block_id: "quest-team-vote",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "✅ Approve",
+              emoji: true,
+            },
+            value: "approve",
+            action_id: "approve",
+            style: "primary"
+          },
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "❌ Reject",
+              emoji: true,
+            },
+            value: "reject",
+            action_id: "reject",
+            style: "danger"
+          },
+        ],
+      });
     }
 
     return {
       channel: this.playerDms[to_player.id],
-      text: `${message}\n${voting_update}\nVote with \`approve\` or \`reject\``,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: message,
-          },
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: voting_update,
-          },
-        },
-        {
-          type: "actions",
-          block_id: "quest-team-vote",
-          elements: [
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: ":white_check_mark: Approve",
-                emoji: true,
-              },
-              value: "approve",
-              action_id: "approve",
-            },
-            {
-              type: "button",
-              text: {
-                type: "plain_text",
-                text: ":x: Reject",
-                emoji: true,
-              },
-              value: "reject",
-              action_id: "reject",
-            },
-          ],
-        },
-      ],
-    }
+      text: `${teamNomination} - ${statusText}`,
+      blocks: blocks
+    };
+  }
+
+  createProgressBar(current: number, total: number, length: number = 10): string {
+    const filled = Math.floor((current / total) * length);
+    const empty = length - filled;
+    return '█'.repeat(filled) + '░'.repeat(empty);
   }
 
   async choosePlayersForQuest(player) {
