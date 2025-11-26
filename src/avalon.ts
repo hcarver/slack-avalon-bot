@@ -1183,7 +1183,7 @@ export class Avalon {
       this.broadcast(
         `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
       );
-      const killablePlayers = this.players.filter((p) => p.id !== assassin.id);
+      const killablePlayers = this.players.filter((p) => ['good', 'merlin', 'percival'].includes(p.role));
       await this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
       return Promise.resolve(true);
     }
