@@ -215,7 +215,7 @@ export class Avalon {
     let knownEvils = evils.filter((player) => player.role != "oberon");
     for (let player of this.players) {
       const roleBlocks = this.createRoleInfoBlocks(player, players, evils, knownEvils);
-      
+
       this.api.chat.postMessage({
         channel: this.playerDms[player.id],
         blocks: roleBlocks,
@@ -234,7 +234,7 @@ export class Avalon {
 
   createRoleInfoBlocks(player, allPlayers, evils, knownEvils) {
     const blocks: any[] = [];
-    
+
     // Header
     blocks.push({
       type: 'header',
@@ -261,7 +261,7 @@ export class Avalon {
     const roleEmoji = this.getRoleEmoji(player.role);
     const roleName = this.getRoleName(player.role);
     const alignment = isEvil ? "🔴 Evil" : "🔵 Good";
-    
+
     blocks.push({
       type: 'section',
       text: {
@@ -440,10 +440,114 @@ export class Avalon {
   }
 
   endGame(message, color, current) {
-    let status = `Quest Results: ${this.getStatus(current)}`;
-    message += `\n${status}\n${this.revealRoles(false)}`;
-    this.broadcast(message, color, "end");
+    const blocks = this.createEndGameBlocks(message);
+
+    this.players.forEach(p => {
+      this.api.chat.postMessage({
+        channel: this.playerDms[p.id],
+        blocks: blocks,
+        text: message
+      });
+    });
+
     this.quit();
+  }
+
+  createEndGameBlocks(victoryMessage: string) {
+    const blocks: any[] = [];
+
+    // Determine winner
+    const evilWins = victoryMessage.includes("Minions of Mordred win");
+    const winnerEmoji = evilWins ? "🔴" : "🔵";
+    const winnerText = evilWins ? "EVIL WINS!" : "GOOD WINS!";
+
+    // Victory header
+    blocks.push({
+      type: 'header',
+      text: {
+        type: 'plain_text',
+        text: `${winnerEmoji} GAME OVER - ${winnerText}`,
+        emoji: true
+      }
+    });
+
+    // Victory message
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*${victoryMessage}*`
+      }
+    });
+
+    blocks.push({ type: 'divider' });
+
+    // Final quest results
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*Final Quest Results:*'
+      }
+    });
+    blocks.push(...this.getQuestProgressBlocks(false));
+
+    blocks.push({ type: 'divider' });
+
+    // Role reveals
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*🎭 Role Reveals:*'
+      }
+    });
+
+    // Group players by team
+    const evilPlayers = [];
+    const goodPlayers = [];
+
+    for (let player of this.players) {
+      const roleEmoji = this.getRoleEmoji(player.role);
+      const roleName = this.getRoleName(player.role);
+      const playerInfo = `${roleEmoji} ${M.formatAtUser(player.id)} - *${roleName}*`;
+
+      if (['good', 'merlin', 'percival'].includes(player.role)) {
+        goodPlayers.push(playerInfo);
+      } else {
+        evilPlayers.push(playerInfo);
+      }
+    }
+
+    blocks.push({
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `*🔵 Good Team:*\n${goodPlayers.join('\n')}`
+        },
+        {
+          type: 'mrkdwn',
+          text: `*🔴 Evil Team:*\n${evilPlayers.join('\n')}`
+        }
+      ]
+    });
+
+    // Game stats
+    let score = { good: 0, bad: 0 };
+    for (let res of this.progress) {
+      score[res]++;
+    }
+
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: `Game ended with ${score.good} quest${score.good !== 1 ? 's' : ''} succeeded, ${score.bad} quest${score.bad !== 1 ? 's' : ''} failed`
+      }]
+    });
+
+    return blocks;
   }
 
   broadcast(message, color?, special?) {
@@ -486,7 +590,7 @@ export class Avalon {
     let message = ` ${questAssign.n} players ${f}to go on the ${
       Avalon.ORDER[this.questNumber]
     } quest.`;
-    
+
     let order = this.players.map((p) =>
       p.id == player.id
         ? `*${M.formatAtUser(p.id)}*`
@@ -608,7 +712,7 @@ export class Avalon {
 
     // Create progress bar
     const progressBar = this.createProgressBar(votedCount, totalVotes, 10);
-    
+
     // Build player status list with icons
     const playerStatusList = this.players.map(p => {
       if (approving_players.some(ap => ap.id === p.id)) {
@@ -623,7 +727,7 @@ export class Avalon {
     // Determine final result or current status
     let statusText = '';
     let statusColor = '';
-    
+
     if (allVotesIn) {
       if (approving_players.length > rejecting_players.length) {
         statusText = `✅ *Team Accepted* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
@@ -636,7 +740,7 @@ export class Avalon {
       statusText = `🗳️ *Voting in Progress*\n${progressBar} ${votedCount}/${totalVotes} votes received`;
     }
 
-    const hasVoted = approving_players.some(ap => ap.id === to_player.id) || 
+    const hasVoted = approving_players.some(ap => ap.id === to_player.id) ||
                      rejecting_players.some(rp => rp.id === to_player.id);
 
     const blocks: any[] = [
@@ -846,9 +950,9 @@ export class Avalon {
       const questName = Avalon.ORDER[i].charAt(0).toUpperCase() + Avalon.ORDER[i].slice(1);
       const teamSize = questAssign.n;
       const failsRequired = questAssign.f > 1 ? `*` : '';
-      
+
       let emoji = '';
-      
+
       if (i < this.progress.length) {
         // Completed quest
         emoji = this.progress[i] === 'good' ? ':large_blue_circle:' : ':red_circle:';
@@ -1087,12 +1191,12 @@ export class Avalon {
 
   broadcastQuestResult(questPlayers, result: "success" | "failure", failCount: number, failsRequired: number) {
     const blocks: any[] = [];
-    
+
     // Header
     const questName = Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1);
     const resultEmoji = result === "success" ? "✅" : "❌";
     const resultText = result === "success" ? "SUCCESS" : "FAILED";
-    
+
     blocks.push({
       type: 'header',
       text: {
@@ -1140,7 +1244,7 @@ export class Avalon {
     for (let res of this.progress) {
       score[res]++;
     }
-    
+
     blocks.push({
       type: 'context',
       elements: [{
@@ -1192,49 +1296,152 @@ export class Avalon {
 
   async assassinMerlinKill(status, assassin, merlin, killablePlayers) {
     await new Promise(resolve => setTimeout(resolve, 1000));
-    this.broadcast(
-      `*${M.formatAtUser(assassin.id)}* is the :red_circle::crossed_swords:ASSASSIN. They can now try to kill MERLIN.`,
-      "#e00",
-    );
+
+    // Broadcast assassination phase announcement
+    const announcementBlocks: any[] = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '⚔️ ASSASSINATION PHASE',
+          emoji: true
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `🔵 Good has won 3 quests, but the game isn't over yet!\n\n⚔️ *${M.formatAtUser(assassin.id)}* is THE ASSASSIN and can now attempt to kill MERLIN.\n\nIf the Assassin correctly identifies Merlin, 🔴 Evil wins!\nIf the Assassin is wrong, 🔵 Good wins!`
+        }
+      }
+    ];
+
+    this.players.forEach(p => {
+      this.api.chat.postMessage({
+        channel: this.playerDms[p.id],
+        blocks: announcementBlocks,
+        text: `${M.formatAtUser(assassin.id)} is the ASSASSIN. They can now try to kill MERLIN.`
+      });
+    });
+
+    // Assassin's choice interface
+    const assassinBlocks: any[] = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '⚔️ Choose Your Target',
+          emoji: true
+        }
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `You are the Assassin! 🔴 Evil's fate is in your hands.\n\nGood has won 3 quests, but you can still win by correctly identifying and killing MERLIN.\n\n*Choose wisely...*`
+        }
+      }
+    ];
 
     const playerChoice = this.gameUx.pollForDecision(
       this.playerDms[assassin.id],
-      `Choose who to kill`,
+      `Choose who to assassinate`,
       killablePlayers.map((player) => M.formatAtUser(player)),
-      "Kill",
+      "⚔️ Assassinate",
       (user_id) => user_id === assassin.id,
       1,
       1,
     );
     const idx = await playerChoice;
     const accused = killablePlayers[idx[0]];
+
+    // Result announcement
+    const resultBlocks: any[] = [];
+
     if (accused.role != "merlin") {
-      this.broadcast(
-        `${status}:crossed_swords:${M.formatAtUser(
-          assassin.id,
-        )} chose ${M.formatAtUser(
-          accused.id,
-        )} as MERLIN, not :angel:${M.formatAtUser(
-          merlin.id,
-        )}.\n:large_blue_circle: Loyal Servants of Arthur win!\n${this.revealRoles(
-          true,
-        )}`,
-        "#08e",
-        "end",
-      );
+      resultBlocks.push({
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '🔵 GOOD WINS!',
+          emoji: true
+        }
+      });
+      resultBlocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `⚔️ ${M.formatAtUser(assassin.id)} assassinated ${M.formatAtUser(accused.id)}, but...\n\n❌ *They were NOT Merlin!*\n\n👼 The real Merlin was ${M.formatAtUser(merlin.id)}\n\n🔵 *Loyal Servants of Arthur win!*`
+        }
+      });
     } else {
-      this.broadcast(
-        `${status}:crossed_swords:${M.formatAtUser(
-          assassin.id,
-        )} chose :angel:${M.formatAtUser(
-          accused.id,
-        )} correctly as MERLIN.\n:red_circle: Minions of Mordred win!\n${this.revealRoles(
-          true,
-        )}`,
-        "#e00",
-        "end",
-      );
+      resultBlocks.push({
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: '🔴 EVIL WINS!',
+          emoji: true
+        }
+      });
+      resultBlocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `⚔️ ${M.formatAtUser(assassin.id)} assassinated ${M.formatAtUser(accused.id)}\n\n✅ *They correctly identified Merlin!*\n\n🔴 *Minions of Mordred win!*`
+        }
+      });
     }
+
+    resultBlocks.push({ type: 'divider' });
+    resultBlocks.push(...this.getQuestProgressBlocks(false));
+    resultBlocks.push({ type: 'divider' });
+
+    // Role reveals
+    resultBlocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*🎭 Role Reveals:*'
+      }
+    });
+
+    const evilPlayers = [];
+    const goodPlayers = [];
+
+    for (let player of this.players) {
+      const roleEmoji = this.getRoleEmoji(player.role);
+      const roleName = this.getRoleName(player.role);
+      const playerInfo = `${roleEmoji} ${M.formatAtUser(player.id)} - *${roleName}*`;
+
+      if (['good', 'merlin', 'percival'].includes(player.role)) {
+        goodPlayers.push(playerInfo);
+      } else {
+        evilPlayers.push(playerInfo);
+      }
+    }
+
+    resultBlocks.push({
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `*🔵 Good Team:*\n${goodPlayers.join('\n')}`
+        },
+        {
+          type: 'mrkdwn',
+          text: `*🔴 Evil Team:*\n${evilPlayers.join('\n')}`
+        }
+      ]
+    });
+
+    this.players.forEach(p => {
+      this.api.chat.postMessage({
+        channel: this.playerDms[p.id],
+        blocks: resultBlocks,
+        text: accused.role === "merlin" ? "Evil wins! Assassin killed Merlin!" : "Good wins! Assassin missed!"
+      });
+    });
+
     this.quit();
     return Promise.resolve(true);
   }
