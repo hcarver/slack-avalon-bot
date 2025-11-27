@@ -182,7 +182,7 @@ export class Bot {
 
       // Poll for players
       this.isPolling = true;
-      const starter = await this.pollPlayersForGame(channel);
+      const starter = await this.pollPlayersForGame(channel, event.user);
       this.isPolling = false;
 
       if(starter.players.length < Avalon.MIN_PLAYERS) {
@@ -204,11 +204,10 @@ export class Bot {
   // instance.
   //
   // channel - The channel where the deal message was posted
+  // gameStarter - The user ID who initiated the game
   //
-  // Returns a Promise that resolves to { channel, players }
-  async pollPlayersForGame(channel) {
-    let timeout = 45;
-
+  // Returns a Promise that resolves to { channel, players, starter }
+  async pollPlayersForGame(channel, gameStarter) {
     if (this.gameConfig.resistance) {
       this.bolt.client.chat.postMessage({
         text: "Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png",
@@ -222,26 +221,39 @@ export class Bot {
     }
 
     let players = [];
-    let countdown = timeout;
-    let intervalId;
-    let resolveFn;
     const playerSet = new Set();
 
-    const formatMessage = (t) => `Respond with *'yes'* in this channel${M.timer(t)}.\n\nPlayers joined (${players.length}):* ${players.map(M.formatAtUser).join(", ") || "_None yet_"}`
+    const formatMessage = () => `Respond with *'yes'* to join the game.\n\n*Players joined (${players.length}/${Avalon.MAX_PLAYERS}):*\n${players.map(M.formatAtUser).join(", ") || "_None yet_"}\n\n${M.formatAtUser(gameStarter)} - type *'start'* when ready to begin (minimum ${Avalon.MIN_PLAYERS} players required).`
 
-    // Handler for collecting players
-    const amessageHandler = async ({event}) => {
-      if (
-        event.channel === channel.id &&
-        event.text &&
-        event.text.toLowerCase().match(/\byes\b|dta/i) &&
-        !playerSet.has(event.user)
-      ) {
+    let messageTs: string;
+    let startTriggered = false;
+
+    // Handler for collecting players and watching for start
+    const messageHandler = async ({event}) => {
+      if (event.channel !== channel.id) return;
+      if (!event.text) return;
+
+      const text = event.text.toLowerCase();
+
+      // Check if starter said "start"
+      if (text.match(/\bstart\b/i) && event.user === gameStarter) {
+        startTriggered = true;
+        return;
+      }
+
+      // Check for new players joining
+      if (text.match(/\byes\b|dta/i) && !playerSet.has(event.user)) {
         if(playerSet.size < Avalon.MAX_PLAYERS) {
           playerSet.add(event.user);
           players.push(event.user);
-        }
-        else {
+          
+          // Update the message
+          await this.api.chat.update({
+            ts: messageTs,
+            channel: channel.id,
+            text: formatMessage()
+          });
+        } else {
           await this.bolt.client.chat.postMessage({
             text: `Couldn't add ${M.formatAtUser(event.user)} because the game is already full.`,
             channel: channel.id,
@@ -251,33 +263,44 @@ export class Bot {
     };
 
     // Listen for messages
-    const listenerId = this.bolt.addMessageListener(amessageHandler);
+    const listenerId = this.bolt.addMessageListener(messageHandler);
 
     const payload = await this.bolt.client.chat.postMessage({
-      text: formatMessage(timeout),
+      text: formatMessage(),
       channel: channel.id,
     });
+    messageTs = payload.ts as string;
 
-    // Countdown and update message
+    // Wait for start command or timeout (5 minutes)
+    const timeoutMs = 5 * 60 * 1000; // 5 minutes
+    const startTime = Date.now();
+    let timedOut = false;
+
     await new Promise<void>((resolve) => {
-      resolveFn = resolve;
-      intervalId = setInterval(() => {
-        countdown--;
-        this.api.chat.update({
-          ts: payload.ts,
-          channel: channel.id,
-          text: `${formatMessage(countdown)}`
-        });
-        if (countdown <= 0) {
-          clearInterval(intervalId);
+      const checkInterval = setInterval(() => {
+        if (startTriggered) {
+          clearInterval(checkInterval);
+          resolve();
+        } else if (Date.now() - startTime >= timeoutMs) {
+          timedOut = true;
+          clearInterval(checkInterval);
           resolve();
         }
-      }, 1000);
+      }, 500);
     });
 
     this.bolt.removeMessageListener(listenerId);
 
-    return { channel, players };
+    // If timed out, notify and return empty players
+    if (timedOut) {
+      await this.bolt.client.chat.postMessage({
+        text: `Game signup timed out after 5 minutes. ${players.length > 0 ? `${M.pp(players)} joined but the game was not started.` : 'No players joined.'}`,
+        channel: channel.id,
+      });
+      return { channel, players: [], starter: gameStarter };
+    }
+
+    return { channel, players, starter: gameStarter };
   }
 
   // Private: Starts and manages a new Avalon game.
@@ -347,7 +370,7 @@ export class Bot {
       // Wait for role choice
       const role_indexes = await roleChoice as number[];
       const role_names = role_indexes.map(idx => configurableRoles[idx]);
-      
+
       // Post role selection message
       this.bolt.client.chat.postMessage({
         text: `${M.formatAtUser(configuringPlayer)} chose:\n\n${role_names.map(name => `${Avalon.ROLES[name]}`).join("\n")}\n\nGame starting now!`,
@@ -364,16 +387,16 @@ export class Bot {
 
       // Open DMs for all players
       const playerDms = await SlackApiRx.openDms(this.api, players);
-      
+
       // Wait 2 seconds then start the game
       await new Promise(resolve => setTimeout(resolve, 2000));
-      
+
       // Start the game
       await this.game.start(playerDms);
-      
+
       // Clean up
       this.game = null;
-      
+
     } catch (error) {
       console.error('Error starting game:', error);
       this.game = null;
