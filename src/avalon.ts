@@ -14,7 +14,6 @@ export class Avalon {
   playerDms: any;
   gameUx: GameUILayer;
   api: webApi.WebClient;
-  messages: any;
   date: any;
   channel: any;
   isRunning;
@@ -24,7 +23,6 @@ export class Avalon {
   specialRoles;
   evils;
   assassin;
-  subscription;
   resistance;
   questPlayers;
   bolt: any; // Added for message listening
@@ -331,43 +329,12 @@ export class Avalon {
   quit() {
     this._gameEnded = true;
     this.isRunning = false;
-    // this.endTimeout = setTimeout(() => this.chatSubscription.dispose(), 60000);
   }
 
   async playRound() {
     const leader = this.players[this.currentLeaderIndex];
     await this.deferredActionForPlayer(leader);
     this.currentLeaderIndex = (this.currentLeaderIndex + 1) % this.players.length;
-  }
-
-  revealRoles(excludeMerlin) {
-    let lines = [`${M.pp(this.evils)} are :red_circle: Minions of Mordred.`];
-    let reveals = {};
-    for (let player of this.players) {
-      if (player.role == "merlin" && !excludeMerlin) {
-        reveals["merlin"] = `${M.formatAtUser(player.id)} is :angel: MERLIN.`;
-      } else if (player.role == "percival") {
-        reveals["percival"] = `${M.formatAtUser(player.id)} is :cop: PERCIVAL.`;
-      } else if (player.role == "morgana") {
-        reveals["morgana"] = `${M.formatAtUser(
-          player.id,
-        )} is :japanese_ogre: MORGANA.`;
-      } else if (player.role == "mordred") {
-        reveals["mordred"] = `${M.formatAtUser(
-          player.id,
-        )} is :smiling_imp: MORDRED.`;
-      } else if (player.role == "oberon") {
-        reveals["oberon"] = `${M.formatAtUser(player.id)} is :alien: OBERON.`;
-      }
-    }
-    return lines
-      .concat(
-        Object.keys(Avalon.ROLES)
-          .filter((role) => !!reveals[role])
-          .map((role) => reveals[role])
-          .join(" "),
-      )
-      .join("\n");
   }
 
   endGame(message, color, current) {
@@ -479,28 +446,6 @@ export class Avalon {
     });
 
     return blocks;
-  }
-
-  broadcast(message, color?, special?) {
-    let attachment: any = {
-      fallback: message,
-      text: message,
-      mrkdwn_in: ["pretext", "text"],
-      color: undefined,
-      pretext: undefined,
-      thumb_url: undefined,
-    };
-    if (color) attachment.color = color;
-    if (special == "end") {
-      attachment.pretext = `*End Avalon Game* (${this.date})`;
-    }
-
-    this.players.map((p) => {
-      this.api.chat.postMessage({
-        channel: this.playerDms[p.id],
-        attachments: [attachment],
-      });
-    });
   }
 
   questAssign() {
@@ -1201,7 +1146,7 @@ export class Avalon {
         "#e00",
         false
       );
-      return Promise.resolve(true);
+      return;
     } else if (score.good == 3) {
       let merlin = this.players.filter((player) => player.role == "merlin");
       if (!merlin.length) {
@@ -1210,22 +1155,16 @@ export class Avalon {
           "#08e",
           false
         );
-        return Promise.resolve(true);
+        return;
       }
       let assassin = this.assassin;
       merlin = merlin[0];
-      let status = `Quest Results: ${this.getStatus(false)}\n`;
-      this.broadcast(
-        `${status}Victory is near for :large_blue_circle: Loyal Servants of Arthur for succeeding 3 quests!`,
-      );
-      const killablePlayers = this.players.filter((p) => ['good', 'merlin', 'percival'].includes(p.role));
-      await this.assassinMerlinKill(status, assassin, merlin, killablePlayers);
-      return Promise.resolve(true);
+      const killablePlayers = this.players.filter((p) => RoleManager.isGoodPlayer(p.role));
+      await this.assassinMerlinKill(assassin, merlin, killablePlayers);
     }
-    return Promise.resolve(true);
   }
 
-  async assassinMerlinKill(status, assassin, merlin, killablePlayers) {
+  async assassinMerlinKill(assassin, merlin, killablePlayers) {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Broadcast assassination phase announcement
@@ -1374,7 +1313,6 @@ export class Avalon {
     });
 
     this.quit();
-    return Promise.resolve(true);
   }
 }
 
