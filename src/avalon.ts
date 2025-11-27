@@ -1058,16 +1058,16 @@ export class Avalon {
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
         this.progress.push("good");
-        this.broadcastQuestResult(questPlayers, "success", failed.length, 0);
+        await this.broadcastQuestResult(questPlayers, "success", failed.length, 0);
         questResult = "good";
       } else {
         this.progress.push("bad");
-        this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f);
+        await this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f);
         questResult = "bad";
       }
     } else {
       this.progress.push("good");
-      this.broadcastQuestResult(questPlayers, "success", 0, 0);
+      await this.broadcastQuestResult(questPlayers, "success", 0, 0);
       questResult = "good";
     }
     this.questNumber++;
@@ -1080,7 +1080,7 @@ export class Avalon {
     return true;
   }
 
-  broadcastQuestResult(questPlayers: Player[], result: "success" | "failure", failCount: number, failsRequired: number): void {
+  async broadcastQuestResult(questPlayers: Player[], result: "success" | "failure", failCount: number, failsRequired: number): Promise<void> {
     const blocks: any[] = [];
 
     // Header
@@ -1144,14 +1144,14 @@ export class Avalon {
       }]
     });
 
-    // Send to all players
-    this.players.forEach(p => {
-      this.api.chat.postMessage({
+    // Send to all players and wait for all messages to be sent
+    await Promise.all(this.players.map(p => {
+      return this.api.chat.postMessage({
         channel: this.playerDms[p.id],
         blocks: blocks,
         text: `${questName} Quest ${resultText}`
       });
-    });
+    }));
   }
 
   async evaluateEndGame(score: GameScore): Promise<void> {
