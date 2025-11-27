@@ -588,15 +588,31 @@ export class Avalon {
     const progressBar = this.createProgressBar(votedCount, totalVotes, 10);
 
     // Build player status list with icons
-    const playerStatusList = this.players.map(p => {
-      if (approving_players.some(ap => ap.id === p.id)) {
-        return `✅ ${M.formatAtUser(p.id)}`;
-      } else if (rejecting_players.some(rp => rp.id === p.id)) {
-        return `❌ ${M.formatAtUser(p.id)}`;
-      } else {
-        return `⏳ ${M.formatAtUser(p.id)}`;
-      }
-    }).join('\n');
+    let playerStatusList: string;
+    if (allVotesIn) {
+      // Show actual votes only after all votes are in
+      playerStatusList = this.players.map(p => {
+        if (approving_players.some(ap => ap.id === p.id)) {
+          return `✅ ${M.formatAtUser(p.id)}`;
+        } else if (rejecting_players.some(rp => rp.id === p.id)) {
+          return `❌ ${M.formatAtUser(p.id)}`;
+        } else {
+          return `⬜ ${M.formatAtUser(p.id)}`;
+        }
+      }).join('\n');
+    } else {
+      // Before all votes are in, only show who has voted (not how they voted)
+      playerStatusList = this.players.map(p => {
+        const hasVoted = approving_players.some(ap => ap.id === p.id) ||
+                        rejecting_players.some(rp => rp.id === p.id);
+        if (hasVoted) {
+          return `🗳️ ${M.formatAtUser(p.id)}`;
+        } else {
+          return `⏳ ${M.formatAtUser(p.id)}`;
+        }
+      }).join('\n');
+    }
+
 
     // Determine final result or current status
     let statusText = '';
