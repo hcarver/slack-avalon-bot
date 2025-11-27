@@ -1,30 +1,31 @@
 "use strict";
 
 import { webApi } from "@slack/bolt";
+import * as _ from "lodash";
 
-import { GameUILayer } from "./game-ui-layer.js";
-import { RoleManager } from "./role-manager.js";
+import { GameUILayer } from "./game-ui-layer";
+import { RoleManager } from "./role-manager";
+import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role } from "./types";
 
-const _ = require("lodash");
 const M = require("./message-helpers");
 require("string_score");
 
 export class Avalon {
-  players: any;
-  playerDms: any;
+  players: Player[];
+  playerDms: Record<string, string>;
   gameUx: GameUILayer;
   api: webApi.WebClient;
-  date: any;
+  date: Date;
   channel: any;
-  isRunning;
-  questNumber;
-  rejectCount;
-  progress;
-  specialRoles;
-  evils;
-  assassin;
-  resistance;
-  questPlayers;
+  isRunning: boolean;
+  questNumber: number;
+  rejectCount: number;
+  progress: QuestResult[];
+  specialRoles: Role[];
+  evils: Player[];
+  assassin: Player;
+  resistance: boolean;
+  questPlayers: Player[];
   bolt: any; // Added for message listening
   private _gameEnded: boolean = false;
   private currentLeaderIndex: number;
@@ -33,7 +34,7 @@ export class Avalon {
 
   static MAX_PLAYERS = 10;
 
-  static DEFAULT_CONFIG = {
+  static DEFAULT_CONFIG: GameConfig = {
     resistance: false,
     order: "turn",
     specialRoles: ["merlin"],
@@ -51,7 +52,7 @@ export class Avalon {
     merlin: ":angel: MERLIN :large_blue_circle: Loyal Servant of Arthur",
   };
 
-  static ROLE_ASSIGNS = [
+  static ROLE_ASSIGNS: Role[][] = [
     ["bad", "bad", "good", "good", "good"],
     ["bad", "bad", "good", "good", "good", "good"],
     ["bad", "bad", "bad", "good", "good", "good", "good"],
@@ -73,7 +74,7 @@ export class Avalon {
 
   static ORDER = ["first", "second", "third", "fourth", "last"];
 
-  static QUEST_ASSIGNS = [
+  static QUEST_ASSIGNS: QuestAssignment[][] = [
     [
       { n: 2, f: 1 },
       { n: 3, f: 1 },
@@ -118,9 +119,9 @@ export class Avalon {
     ],
   ];
 
-  static getAssigns(numPlayers, specialRoles, resistance) {
+  static getAssigns(numPlayers: number, specialRoles: Role[], resistance: boolean): Role[] {
     resistance = resistance || false;
-    let assigns = Avalon.ROLE_ASSIGNS[numPlayers - Avalon.MIN_PLAYERS].slice(0);
+    let assigns: Role[] = Avalon.ROLE_ASSIGNS[numPlayers - Avalon.MIN_PLAYERS].slice(0);
     if (!resistance) {
       specialRoles.forEach((role) => {
         switch (role) {
@@ -140,20 +141,18 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(gameUx, api, bolt, channel, players) {
+  constructor(gameUx: GameUILayer, api: webApi.WebClient, bolt: any, channel: any, players: string[]) {
     this.api = api;
     this.gameUx = gameUx;
     this.bolt = bolt;
 
     this.channel = channel;
-    this.players = players.map((id) => {
-      return { id: id };
-    });
-    _.extend(this, Avalon.DEFAULT_CONFIG);
+    this.players = players.map((id) => ({ id }));
+    Object.assign(this, Avalon.DEFAULT_CONFIG);
     this._gameEnded = false;
   }
 
-  start(playerDms, timeBetweenRounds) {
+  start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
     this.isRunning = true;
     this.questNumber = 0;
@@ -185,10 +184,10 @@ export class Avalon {
       this.assassin = this.getAssassin();
     }
 
-    const presentRoles = players.map(p => p.role);
+    const presentRoles = players.map(p => p.role).filter((r): r is Role => r !== undefined);
 
     let specialRoles = Object.keys(Avalon.ROLES)
-    .filter((role) => presentRoles.indexOf(role) >= 0)
+    .filter((role): role is Role => presentRoles.indexOf(role as Role) >= 0)
     .map((role) => {
       switch (role) {
         case "merlin":
@@ -231,7 +230,7 @@ export class Avalon {
     return Promise.resolve();
   }
 
-  createRoleInfoBlocks(player, allPlayers, evils, knownEvils) {
+  createRoleInfoBlocks(player: Player, allPlayers: Player[], evils: Player[], knownEvils: Player[]): any[] {
     const blocks: any[] = [];
 
     // Header
@@ -308,22 +307,21 @@ export class Avalon {
     return blocks;
   }
 
-  getRoleAssigns(roles) {
+  getRoleAssigns(roles: Role[]): Role[] {
     return _.shuffle(roles);
   }
 
-  playerOrder(players) {
+  playerOrder(players: Player[]): Player[] {
     return _.shuffle(players);
   }
 
-  getAssassin() {
-    let assassin = this.evils.filter((player) => player.role == "assassin");
-    if (assassin.length) {
-      assassin = assassin[0];
+  getAssassin(): Player {
+    let assassinArray = this.evils.filter((player) => player.role == "assassin");
+    if (assassinArray.length) {
+      return assassinArray[0];
     } else {
-      assassin = _.shuffle(this.evils)[0];
+      return _.shuffle(this.evils)[0];
     }
-    return assassin;
   }
 
   quit() {
@@ -337,7 +335,7 @@ export class Avalon {
     this.currentLeaderIndex = (this.currentLeaderIndex + 1) % this.players.length;
   }
 
-  endGame(message, color, current) {
+  endGame(message: string, color: string, current: boolean): void {
     const blocks = this.createEndGameBlocks(message);
 
     this.players.forEach(p => {
@@ -351,7 +349,7 @@ export class Avalon {
     this.quit();
   }
 
-  createEndGameBlocks(victoryMessage: string) {
+  createEndGameBlocks(victoryMessage: string): any[] {
     const blocks: any[] = [];
 
     // Determine winner
@@ -448,13 +446,13 @@ export class Avalon {
     return blocks;
   }
 
-  questAssign() {
+  questAssign(): QuestAssignment {
     return Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
       this.questNumber
     ];
   }
 
-  async deferredActionForPlayer(player, timeToPause?) {
+  async deferredActionForPlayer(player: Player, timeToPause?: number): Promise<boolean> {
     timeToPause = timeToPause || 3000;
     await new Promise(resolve => setTimeout(resolve, timeToPause));
 
@@ -690,7 +688,7 @@ export class Avalon {
     return '█'.repeat(filled) + '░'.repeat(empty);
   }
 
-  async choosePlayersForQuest(player) {
+  async choosePlayersForQuest(player: Player): Promise<boolean> {
     let questAssign = this.questAssign();
 
     // Await the player's team choice
@@ -785,7 +783,7 @@ export class Avalon {
     return approveVotes.length > rejectVotes.length;
   }
 
-  getStatus(current) {
+  getStatus(current: boolean): string {
     let status = this.progress.map((res, i) => {
       let questAssign =
         Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
@@ -817,7 +815,7 @@ export class Avalon {
     return status.join(",");
   }
 
-  getQuestProgressBlocks(current = false) {
+  getQuestProgressBlocks(current: boolean = false): any[] {
     const blocks = [];
     const questParts = [];
 
@@ -979,7 +977,7 @@ export class Avalon {
     }
   }
 
-  async runQuest(questPlayers, leader) {
+  async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
     // 1. Send quest messages to all players and collect their message timestamps
     const player_messages = new Map();
     await Promise.all(this.players.map(async (p) => {
@@ -1062,10 +1060,11 @@ export class Avalon {
       score[res]++;
     }
     // 4. Await the endgame evaluation
-    return await this.evaluateEndGame(score);
+    await this.evaluateEndGame(score);
+    return true;
   }
 
-  broadcastQuestResult(questPlayers, result: "success" | "failure", failCount: number, failsRequired: number) {
+  broadcastQuestResult(questPlayers: Player[], result: "success" | "failure", failCount: number, failsRequired: number): void {
     const blocks: any[] = [];
 
     // Header
@@ -1139,7 +1138,7 @@ export class Avalon {
     });
   }
 
-  async evaluateEndGame(score) {
+  async evaluateEndGame(score: GameScore): Promise<void> {
     if (score.bad == 3) {
       this.endGame(
         `:red_circle: Minions of Mordred win by failing 3 quests!`,
@@ -1148,8 +1147,8 @@ export class Avalon {
       );
       return;
     } else if (score.good == 3) {
-      let merlin = this.players.filter((player) => player.role == "merlin");
-      if (!merlin.length) {
+      let merlinArray = this.players.filter((player) => player.role == "merlin");
+      if (!merlinArray.length) {
         this.endGame(
           `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
           "#08e",
@@ -1158,13 +1157,13 @@ export class Avalon {
         return;
       }
       let assassin = this.assassin;
-      merlin = merlin[0];
-      const killablePlayers = this.players.filter((p) => RoleManager.isGoodPlayer(p.role));
+      let merlin = merlinArray[0];
+      const killablePlayers = this.players.filter((p) => p.role && RoleManager.isGoodPlayer(p.role));
       await this.assassinMerlinKill(assassin, merlin, killablePlayers);
     }
   }
 
-  async assassinMerlinKill(assassin, merlin, killablePlayers) {
+  async assassinMerlinKill(assassin: Player, merlin: Player, killablePlayers: Player[]): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Broadcast assassination phase announcement

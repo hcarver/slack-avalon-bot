@@ -1,7 +1,9 @@
+import { Player, Role } from "./types";
+
 const M = require("./message-helpers");
 
 export class RoleManager {
-  static getRoleEmoji(role: string): string {
+  static getRoleEmoji(role: Role): string {
     const emojiMap = {
       'merlin': '👼',
       'percival': '👮',
@@ -15,7 +17,7 @@ export class RoleManager {
     return emojiMap[role] || '❓';
   }
 
-  static getRoleName(role: string): string {
+  static getRoleName(role: Role): string {
     const nameMap = {
       'merlin': 'MERLIN',
       'percival': 'PERCIVAL',
@@ -29,7 +31,7 @@ export class RoleManager {
     return nameMap[role] || role;
   }
 
-  static getRoleSpecificInfo(player, allPlayers, evils, knownEvils): string {
+  static getRoleSpecificInfo(player: Player, allPlayers: Player[], evils: Player[], knownEvils: Player[]): string {
     if (player.role === "merlin") {
       let evilButMordred = evils.filter((p) => p.role !== "mordred");
       if (evilButMordred.length === evils.length) {
@@ -57,7 +59,7 @@ export class RoleManager {
     return "";
   }
 
-  static getRoleObjective(role: string): string {
+  static getRoleObjective(role: Role): string {
     const objectives = {
       'merlin': 'Use your knowledge wisely, but don\'t reveal yourself or the Assassin will kill you!',
       'percival': 'Protect Merlin\'s identity while helping good prevail.',
@@ -71,11 +73,11 @@ export class RoleManager {
     return objectives[role] || '';
   }
 
-  static isGoodPlayer(role: string): boolean {
+  static isGoodPlayer(role: Role): boolean {
     return ['good', 'merlin', 'percival'].includes(role);
   }
 
-  static isEvilPlayer(role: string): boolean {
+  static isEvilPlayer(role: Role): boolean {
     return !this.isGoodPlayer(role);
   }
 }

@@ -1,21 +1,19 @@
-"use strict";
-const _ = require("lodash");
+import { Player } from "./types";
 
-class MessageHelpers {
-  static formatAtUser(user_id) {
+export class MessageHelpers {
+  static formatAtUser(user_id: string | Player | { id: string }): string {
     // Accept either an id string, or an object like {id: some_string}.
-    // This isn't beautiful.
-    const id = user_id.id || user_id;
+    const id = typeof user_id === 'string' ? user_id : user_id.id;
     return `<@${id}>`;
   }
 
-  static pp(userArray) {
+  static pp(userArray: (string | Player | { id: string })[]): string {
     return userArray
       .map((user) => MessageHelpers.formatAtUser(user))
       .join(", ");
   }
 
-  static get CLOCK() {
+  static get CLOCK(): string[] {
     return [
       "🕛",
       "🕚",
@@ -32,7 +30,7 @@ class MessageHelpers {
     ];
   }
 
-  static timer(t) {
+  static timer(t: number): string {
     if (t <= 0) {
       return "";
     }
@@ -41,4 +39,5 @@ class MessageHelpers {
   }
 }
 
+// Keep CommonJS export for backward compatibility
 module.exports = MessageHelpers;
