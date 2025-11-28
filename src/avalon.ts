@@ -6,6 +6,7 @@ import * as _ from "lodash";
 import { GameUILayer } from "./game-ui-layer";
 import { RoleManager } from "./role-manager";
 import { MessageBlockBuilder } from "./message-block-builder";
+import { QuestManager } from "./quest-manager";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role } from "./types";
 
 const M = require("./message-helpers");
@@ -19,9 +20,8 @@ export class Avalon {
   date: Date;
   channel: any;
   isRunning: boolean;
-  questNumber: number;
+  questManager: QuestManager;
   rejectCount: number;
-  progress: QuestResult[];
   specialRoles: Role[];
   evils: Player[];
   assassin: Player;
@@ -156,9 +156,12 @@ export class Avalon {
   start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
     this.isRunning = true;
-    this.questNumber = 0;
+    this.questManager = new QuestManager(
+      this.players.length,
+      this.players.length - Avalon.MIN_PLAYERS,
+      Avalon.QUEST_ASSIGNS
+    );
     this.rejectCount = 0;
-    this.progress = [];
     this.playerDms = playerDms;
     this.date = new Date();
     this.currentLeaderIndex = 0;
@@ -268,7 +271,7 @@ export class Avalon {
   }
 
   endGame(message: string, color: string, current: boolean): void {
-    const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.players, this.progress, Avalon.ORDER);
+    const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.players, this.questManager.getProgress(), Avalon.ORDER);
 
     this.players.forEach(p => {
       this.api.chat.postMessage({
@@ -281,23 +284,17 @@ export class Avalon {
     this.quit();
   }
 
-  questAssign(): QuestAssignment {
-    return Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
-      this.questNumber
-    ];
-  }
-
   async deferredActionForPlayer(player: Player, timeToPause?: number): Promise<boolean> {
     timeToPause = timeToPause || 3000;
     await new Promise(resolve => setTimeout(resolve, timeToPause));
 
-    const questAssign = this.questAssign();
+    const questAssign = this.questManager.getCurrentQuestAssignment();
     let f = "";
     if (questAssign.f > 1) {
       f = "(2 fails required) ";
     }
     let message = ` ${questAssign.n} players ${f}to go on the ${
-      Avalon.ORDER[this.questNumber]
+      Avalon.ORDER[this.questManager.getCurrentQuestNumber()]
     } quest.`;
 
     let order = this.players.map((p) =>
@@ -311,11 +308,11 @@ export class Avalon {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: `${Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1)} Quest - Team Selection`,
+          text: `${Avalon.ORDER[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + Avalon.ORDER[this.questManager.getCurrentQuestNumber()].slice(1)} Quest - Team Selection`,
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.progress, Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.players.length - Avalon.MIN_PLAYERS, this.questNumber),
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.players.length - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
       {
         type: 'section',
         text: {
@@ -534,7 +531,7 @@ export class Avalon {
   }
 
   async choosePlayersForQuest(player: Player): Promise<boolean> {
-    let questAssign = this.questAssign();
+    let questAssign = this.questManager.getCurrentQuestAssignment();
 
     // Await the player's team choice
     const playerChoice = this.gameUx.pollForDecision(
@@ -560,14 +557,14 @@ export class Avalon {
     // This is necessary, rather than a map, because we use the same player id multiple times in dev
     const player_messages: Array<[{id: string}, string]> = [];
     await Promise.all(this.players.map(async (p) => {
-      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p));
+      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questManager.getCurrentQuestNumber(), p));
       player_messages.push([p, resp.ts]);
     }));
 
     // Helper to update voting status for all players
     const updateVotingStatus = () => {
       player_messages.forEach(([p, ts]) => {
-        let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questNumber, p, approveVotes, rejectVotes);
+        let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questManager.getCurrentQuestNumber(), p, approveVotes, rejectVotes);
         this.api.chat.update({ ...updated_version, ts: ts });
       })
     };
@@ -621,7 +618,7 @@ export class Avalon {
 
     // After all votes are in, update quest history for all players
     player_messages.map(([p, ts]) => {
-      let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questNumber, p, approveVotes, rejectVotes);
+      let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questManager.getCurrentQuestNumber(), p, approveVotes, rejectVotes);
       this.api.chat.update({ ...updated_version, ts: ts });
     })
 
@@ -629,7 +626,7 @@ export class Avalon {
   }
 
   getStatus(current: boolean): string {
-    let status = this.progress.map((res, i) => {
+    let status = this.questManager.getProgress().map((res, i) => {
       let questAssign =
         Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
       let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
@@ -638,7 +635,7 @@ export class Avalon {
     if (current) {
       let questAssign =
         Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
-          this.questNumber
+          this.questManager.getCurrentQuestNumber()
         ];
       status.push(
         `${questAssign.n}${questAssign.f > 1 ? "*" : ""}:black_circle:`,
@@ -670,11 +667,11 @@ export class Avalon {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: `${Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1)} Quest - In Progress`,
+          text: `${Avalon.ORDER[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + Avalon.ORDER[this.questManager.getCurrentQuestNumber()].slice(1)} Quest - In Progress`,
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.progress, Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.players.length - Avalon.MIN_PLAYERS, this.questNumber),
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.players.length - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
       {
         type: 'section',
         text: {
@@ -825,30 +822,25 @@ export class Avalon {
     this.bolt.removeActionListener(questActionListenerId);
 
     // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
-    let questAssign = this.questAssign();
+    let questAssign = this.questManager.getCurrentQuestAssignment();
     let questResult;
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
-        this.progress.push("good");
+        this.questManager.recordQuestResult("good");
         await this.broadcastQuestResult(questPlayers, "success", failed.length, 0);
         questResult = "good";
       } else {
-        this.progress.push("bad");
+        this.questManager.recordQuestResult("bad");
         await this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f);
         questResult = "bad";
       }
     } else {
-      this.progress.push("good");
+      this.questManager.recordQuestResult("good");
       await this.broadcastQuestResult(questPlayers, "success", 0, 0);
       questResult = "good";
     }
-    this.questNumber++;
-    let score = { good: 0, bad: 0 };
-    for (let res of this.progress) {
-      score[res]++;
-    }
     // 4. Await the endgame evaluation
-    await this.evaluateEndGame(score);
+    await this.evaluateEndGame(this.questManager.calculateScore());
     return true;
   }
 
@@ -856,7 +848,7 @@ export class Avalon {
     const blocks: any[] = [];
 
     // Header
-    const questName = Avalon.ORDER[this.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[this.questNumber].slice(1);
+    const questName = Avalon.ORDER[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + Avalon.ORDER[this.questManager.getCurrentQuestNumber()].slice(1);
     const resultEmoji = result === "success" ? "✅" : "❌";
     const resultText = result === "success" ? "SUCCESS" : "FAILED";
 
@@ -900,11 +892,11 @@ export class Avalon {
 
     // Updated quest progress
     blocks.push({ type: 'divider' });
-    blocks.push(...MessageBlockBuilder.createQuestProgressBlocks(this.progress, Avalon.ORDER, false));
+    blocks.push(...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, false));
 
     // Score update
     let score = { good: 0, bad: 0 };
-    for (let res of this.progress) {
+    for (let res of this.questManager.getProgress()) {
       score[res]++;
     }
 
@@ -1003,7 +995,7 @@ export class Avalon {
       merlin.id,
       accused.role === "merlin",
       this.players,
-      this.progress,
+      this.questManager.getProgress(),
       Avalon.ORDER,
       Avalon.QUEST_ASSIGNS,
       this.players.length - Avalon.MIN_PLAYERS
