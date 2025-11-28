@@ -1,4 +1,4 @@
-import { Player, QuestAssignment, Role } from "./types";
+import { Player, QuestAssignment, Role, TeamProposal } from "./types";
 import { RoleManager } from "./role-manager";
 
 const M = require("./message-helpers");
@@ -453,5 +453,191 @@ export class MessageBlockBuilder {
     const filled = Math.floor((current / total) * length);
     const empty = length - filled;
     return '█'.repeat(filled) + '░'.repeat(empty);
+  }
+
+  /**
+   * Creates blocks for team vote history (after voting completes)
+   */
+  static createTeamVoteHistoryBlocks(
+    proposal: TeamProposal,
+    allPlayers: Player[],
+    approvingPlayers: Player[],
+    rejectingPlayers: Player[],
+    questOrder: string[]
+  ): any[] {
+    const M = require("./message-helpers");
+    const teamNomination = `${M.formatAtUser(proposal.leader.id)} nominated ${M.pp(
+      proposal.members,
+    )} for the ${questOrder[proposal.questNumber]} quest`;
+
+    // Build player status list with icons
+    const playerStatusList = allPlayers.map(p => {
+      if (approvingPlayers.some(ap => ap.id === p.id)) {
+        return `✅ ${M.formatAtUser(p.id)}`;
+      } else if (rejectingPlayers.some(rp => rp.id === p.id)) {
+        return `❌ ${M.formatAtUser(p.id)}`;
+      } else {
+        return `⬜ ${M.formatAtUser(p.id)}`;
+      }
+    }).join('\n');
+
+    // Determine final result
+    let statusText = '';
+    if (approvingPlayers.length > rejectingPlayers.length) {
+      statusText = `✅ *Team Accepted* (${approvingPlayers.length} approve, ${rejectingPlayers.length} reject)`;
+    } else {
+      statusText = `❌ *Team Rejected* (${approvingPlayers.length} approve, ${rejectingPlayers.length} reject)`;
+    }
+
+    return [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${questOrder[proposal.questNumber].charAt(0).toUpperCase() + questOrder[proposal.questNumber].slice(1)} Quest - Vote Result*\n${teamNomination}`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: statusText
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          {
+            type: "mrkdwn",
+            text: `*Final Votes:*\n${playerStatusList}`
+          }
+        ]
+      }
+    ];
+  }
+
+  /**
+   * Creates blocks for team voting (in progress or complete)
+   */
+  static createTeamVoteBlocks(
+    proposal: TeamProposal,
+    allPlayers: Player[],
+    viewingPlayer: Player,
+    approvingPlayers: Player[],
+    rejectingPlayers: Player[],
+    questOrder: string[]
+  ): any[] {
+    const M = require("./message-helpers");
+    const teamNomination = `${M.formatAtUser(proposal.leader.id)} is nominating ${M.pp(
+      proposal.members,
+    )} for the ${questOrder[proposal.questNumber]} quest`;
+
+    const votedCount = approvingPlayers.length + rejectingPlayers.length;
+    const totalVotes = allPlayers.length;
+    const allVotesIn = votedCount === totalVotes;
+
+    // Create progress bar
+    const progressBar = MessageBlockBuilder.createProgressBar(votedCount, totalVotes, 10);
+
+    // Build player status list with icons
+    let playerStatusList: string;
+    if (allVotesIn) {
+      // Show actual votes only after all votes are in
+      playerStatusList = allPlayers.map(p => {
+        if (approvingPlayers.some(ap => ap.id === p.id)) {
+          return `✅ ${M.formatAtUser(p.id)}`;
+        } else if (rejectingPlayers.some(rp => rp.id === p.id)) {
+          return `❌ ${M.formatAtUser(p.id)}`;
+        } else {
+          return `⬜ ${M.formatAtUser(p.id)}`;
+        }
+      }).join('\n');
+    } else {
+      // Before all votes are in, only show who has voted (not how they voted)
+      playerStatusList = allPlayers.map(p => {
+        const hasVoted = approvingPlayers.some(ap => ap.id === p.id) ||
+                        rejectingPlayers.some(rp => rp.id === p.id);
+        if (hasVoted) {
+          return `🗳️ ${M.formatAtUser(p.id)}`;
+        } else {
+          return `⏳ ${M.formatAtUser(p.id)}`;
+        }
+      }).join('\n');
+    }
+
+    // Determine final result or current status
+    let statusText = '';
+    if (allVotesIn) {
+      if (approvingPlayers.length > rejectingPlayers.length) {
+        statusText = `✅ *Team Accepted* (${approvingPlayers.length} approve, ${rejectingPlayers.length} reject)`;
+      } else {
+        statusText = `❌ *Team Rejected* (${approvingPlayers.length} approve, ${rejectingPlayers.length} reject)`;
+      }
+    } else {
+      statusText = `🗳️ *Voting in Progress*\n${progressBar} ${votedCount}/${totalVotes} votes received`;
+    }
+
+    const hasVoted = approvingPlayers.some(ap => ap.id === viewingPlayer.id) ||
+                     rejectingPlayers.some(rp => rp.id === viewingPlayer.id);
+
+    const blocks: any[] = [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${questOrder[proposal.questNumber].charAt(0).toUpperCase() + questOrder[proposal.questNumber].slice(1)} Quest - Team Vote*\n${teamNomination}\n*Attempt:* ${proposal.attemptNumber}/5`
+        }
+      },
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: statusText
+        }
+      },
+      {
+        type: "section",
+        fields: [
+          {
+            type: "mrkdwn",
+            text: `*Player Votes:*\n${playerStatusList}`
+          }
+        ]
+      }
+    ];
+
+    // Add action buttons if player hasn't voted yet
+    if (!hasVoted && !allVotesIn) {
+      blocks.push({
+        type: "actions",
+        block_id: "quest-team-vote",
+        elements: [
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "✅ Approve",
+              emoji: true,
+            },
+            value: "approve",
+            action_id: "approve",
+            style: "primary"
+          },
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: "❌ Reject",
+              emoji: true,
+            },
+            value: "reject",
+            action_id: "reject",
+            style: "danger"
+          },
+        ],
+      });
+    }
+
+    return blocks;
   }
 }

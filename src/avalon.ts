@@ -354,187 +354,6 @@ export class Avalon {
     return true;
   }
 
-  questHistoryMessage(proposal: TeamProposal, to_player, approving_players=[], rejecting_players=[]) {
-    const teamNomination = `${M.formatAtUser(proposal.leader.id)} nominated ${M.pp(
-      proposal.members,
-    )} for the ${Avalon.ORDER[proposal.questNumber]} quest`;
-
-    const votedCount = approving_players.length + rejecting_players.length;
-    const totalVotes = this.gameState.getPlayerCount();
-
-    // Build player status list with icons
-    const playerStatusList = this.gameState.players.map(p => {
-      if (approving_players.some(ap => ap.id === p.id)) {
-        return `✅ ${M.formatAtUser(p.id)}`;
-      } else if (rejecting_players.some(rp => rp.id === p.id)) {
-        return `❌ ${M.formatAtUser(p.id)}`;
-      } else {
-        return `⬜ ${M.formatAtUser(p.id)}`;
-      }
-    }).join('\n');
-
-    // Determine final result
-    let statusText = '';
-    if (approving_players.length > rejecting_players.length) {
-      statusText = `✅ *Team Accepted* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
-    } else {
-      statusText = `❌ *Team Rejected* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
-    }
-
-    return {
-      channel: this.gameState.playerDms[to_player.id],
-      text: `${teamNomination} - ${statusText}`,
-      blocks: [
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*${Avalon.ORDER[proposal.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[proposal.questNumber].slice(1)} Quest - Vote Result*\n${teamNomination}`
-          }
-        },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: statusText
-          }
-        },
-        {
-          type: "section",
-          fields: [
-            {
-              type: "mrkdwn",
-              text: `*Final Votes:*\n${playerStatusList}`
-            }
-          ]
-        }
-      ]
-    }
-  }
-
-  voteForQuestMessage(proposal: TeamProposal, to_player, approving_players=[], rejecting_players=[]) {
-    const teamNomination = `${M.formatAtUser(proposal.leader.id)} is nominating ${M.pp(
-      proposal.members,
-    )} for the ${Avalon.ORDER[proposal.questNumber]} quest`;
-
-    const votedCount = approving_players.length + rejecting_players.length;
-    const totalVotes = this.gameState.players.length;
-    const allVotesIn = votedCount === totalVotes;
-
-    // Create progress bar
-    const progressBar = MessageBlockBuilder.createProgressBar(votedCount, totalVotes, 10);
-
-    // Build player status list with icons
-    let playerStatusList: string;
-    if (allVotesIn) {
-      // Show actual votes only after all votes are in
-      playerStatusList = this.gameState.players.map(p => {
-        if (approving_players.some(ap => ap.id === p.id)) {
-          return `✅ ${M.formatAtUser(p.id)}`;
-        } else if (rejecting_players.some(rp => rp.id === p.id)) {
-          return `❌ ${M.formatAtUser(p.id)}`;
-        } else {
-          return `⬜ ${M.formatAtUser(p.id)}`;
-        }
-      }).join('\n');
-    } else {
-      // Before all votes are in, only show who has voted (not how they voted)
-      playerStatusList = this.gameState.players.map(p => {
-        const hasVoted = approving_players.some(ap => ap.id === p.id) ||
-                        rejecting_players.some(rp => rp.id === p.id);
-        if (hasVoted) {
-          return `🗳️ ${M.formatAtUser(p.id)}`;
-        } else {
-          return `⏳ ${M.formatAtUser(p.id)}`;
-        }
-      }).join('\n');
-    }
-
-
-    // Determine final result or current status
-    let statusText = '';
-    let statusColor = '';
-
-    if (allVotesIn) {
-      if (approving_players.length > rejecting_players.length) {
-        statusText = `✅ *Team Accepted* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
-        statusColor = 'good';
-      } else {
-        statusText = `❌ *Team Rejected* (${approving_players.length} approve, ${rejecting_players.length} reject)`;
-        statusColor = 'danger';
-      }
-    } else {
-      statusText = `🗳️ *Voting in Progress*\n${progressBar} ${votedCount}/${totalVotes} votes received`;
-    }
-
-    const hasVoted = approving_players.some(ap => ap.id === to_player.id) ||
-                     rejecting_players.some(rp => rp.id === to_player.id);
-
-    const blocks: any[] = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*${Avalon.ORDER[proposal.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[proposal.questNumber].slice(1)} Quest - Team Vote*\n${teamNomination}\n*Attempt:* ${proposal.attemptNumber}/5`
-        }
-      },
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: statusText
-        }
-      },
-      {
-        type: "section",
-        fields: [
-          {
-            type: "mrkdwn",
-            text: `*Player Votes:*\n${playerStatusList}`
-          }
-        ]
-      }
-    ];
-
-    // Add action buttons if player hasn't voted yet
-    if (!hasVoted && !allVotesIn) {
-      blocks.push({
-        type: "actions",
-        block_id: "quest-team-vote",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "✅ Approve",
-              emoji: true,
-            },
-            value: "approve",
-            action_id: "approve",
-            style: "primary"
-          },
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "❌ Reject",
-              emoji: true,
-            },
-            value: "reject",
-            action_id: "reject",
-            style: "danger"
-          },
-        ],
-      });
-    }
-
-    return {
-      channel: this.gameState.playerDms[to_player.id],
-      text: `${teamNomination} - ${statusText}`,
-      blocks: blocks
-    };
-  }
-
   async choosePlayersForQuest(player: Player): Promise<boolean> {
     let questAssign = this.questManager.getCurrentQuestAssignment();
 
@@ -550,7 +369,7 @@ export class Avalon {
     );
     const idxs = await playerChoice as number[];
     const questPlayers = idxs.map((i) => this.gameState.players[i]);
-    
+
     // Create TeamProposal value object
     const proposal = new TeamProposal(
       player,
@@ -558,7 +377,7 @@ export class Avalon {
       this.questManager.getCurrentQuestNumber(),
       this.gameState.rejectCount + 1
     );
-    
+
     this.gameState.questPlayers = questPlayers;
 
     // Auto-accept teams on the 5th attempt
@@ -571,15 +390,39 @@ export class Avalon {
     // This is necessary, rather than a map, because we use the same player id multiple times in dev
     const player_messages: Array<[{id: string}, string]> = [];
     await Promise.all(this.gameState.players.map(async (p) => {
-      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(proposal, p));
+      const blocks = MessageBlockBuilder.createTeamVoteBlocks(
+        proposal,
+        this.gameState.players,
+        p,
+        [],
+        [],
+        Avalon.ORDER
+      );
+      const resp = await this.api.chat.postMessage({
+        channel: this.gameState.playerDms[p.id],
+        blocks,
+        text: `Team vote for ${Avalon.ORDER[proposal.questNumber]} quest`
+      });
       player_messages.push([p, resp.ts]);
     }));
 
     // Helper to update voting status for all players
     const updateVotingStatus = () => {
       player_messages.forEach(([p, ts]) => {
-        let updated_version = this.voteForQuestMessage(proposal, p, approveVotes, rejectVotes);
-        this.api.chat.update({ ...updated_version, ts: ts });
+        const blocks = MessageBlockBuilder.createTeamVoteBlocks(
+          proposal,
+          this.gameState.players,
+          p,
+          approveVotes,
+          rejectVotes,
+          Avalon.ORDER
+        );
+        this.api.chat.update({
+          channel: this.gameState.playerDms[p.id],
+          ts,
+          blocks,
+          text: `Team vote for ${Avalon.ORDER[proposal.questNumber]} quest`
+        });
       })
     };
 
@@ -632,8 +475,19 @@ export class Avalon {
 
     // After all votes are in, update quest history for all players
     player_messages.map(([p, ts]) => {
-      let updated_version = this.questHistoryMessage(proposal, p, approveVotes, rejectVotes);
-      this.api.chat.update({ ...updated_version, ts: ts });
+      const blocks = MessageBlockBuilder.createTeamVoteHistoryBlocks(
+        proposal,
+        this.gameState.players,
+        approveVotes,
+        rejectVotes,
+        Avalon.ORDER
+      );
+      this.api.chat.update({
+        channel: this.gameState.playerDms[p.id],
+        ts,
+        blocks,
+        text: `Team vote result for ${Avalon.ORDER[proposal.questNumber]} quest`
+      });
     })
 
     return approveVotes.length > rejectVotes.length;
