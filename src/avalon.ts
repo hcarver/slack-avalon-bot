@@ -18,7 +18,7 @@ export class Avalon {
   api: webApi.WebClient;
   questManager!: QuestManager; // Initialized in start()
   bolt: any;
-  
+
   // Temporary storage until start() is called
   private channel: any;
   private playerIds: string[];
@@ -158,7 +158,7 @@ export class Avalon {
 
   start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
-    
+
     const playerObjs = this.playerIds.map((id) => ({ id }));
     let players = this.playerOrder(playerObjs);
     let assigns = this.getRoleAssigns(
@@ -525,117 +525,27 @@ export class Avalon {
     return status.join(",");
   }
 
-  composeQuestMessage(player, questPlayers, leader, playerIdsWhoHaveQuested=[]) {
-    let order = this.gameState.players.map((p) =>
-      p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
-    );
-
-    const header_blocks = [
-      {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: `${Avalon.ORDER[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + Avalon.ORDER[this.questManager.getCurrentQuestNumber()].slice(1)} Quest - In Progress`,
-          emoji: true
-        }
-      },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.gameState.players.length - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `*Quest Team:* ${M.pp(questPlayers)}`
-        }
-      },
-      {
-        type: 'context',
-        elements: [{
-          type: 'mrkdwn',
-          text: `Player order: ${order.join(', ')}`
-        }]
-      },
-      { type: 'divider' }
-    ];
-
-    const summary_blocks = []
-    if(questPlayers.length > playerIdsWhoHaveQuested.length) {
-      const still_waiting_on = `*Waiting for:* ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.id)))}`
-
-      summary_blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: still_waiting_on
-        }
-      })
-    } else {
-      summary_blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `:white_check_mark: All quest members have submitted their choices!`
-        }
-      })
-    }
-
-    const action_blocks = []
-    if(questPlayers.map(x => x.id).includes(player.id) && !playerIdsWhoHaveQuested.includes(player.id)) {
-
-      const action_buttons = [
-        {
-          type: "button",
-          text: {
-            type: "plain_text",
-            text: ":white_check_mark: Succeed",
-            emoji: true,
-          },
-          value: "succeed",
-          action_id: "succeed",
-        }
-      ]
-
-      // Only baddies can fail missions
-      if(!["good", "merlin", "percival"].includes(player.role)) {
-        action_buttons.push(
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: ":x: Fail",
-              emoji: true,
-            },
-            value: "fail",
-            action_id: "fail",
-          }
-        )
-
-      }
-
-      action_blocks.push(
-        {
-          type: "actions",
-          block_id: "quest-success-vote",
-          elements: action_buttons
-        }
-      )
-    }
-
-    return {
-      channel: this.gameState.playerDms[player.id],
-      blocks: [
-        ...header_blocks,
-        ...summary_blocks,
-        ...action_blocks
-      ]
-    }
-  }
 
   async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
     // 1. Send quest messages to all players and collect their message timestamps
     const player_messages = new Map();
     await Promise.all(this.gameState.players.map(async (p) => {
-      const message = this.composeQuestMessage(p, questPlayers, leader);
-      const resp = await this.api.chat.postMessage(message);
+      const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
+        questPlayers,
+        this.gameState.players,
+        p,
+        leader,
+        this.questManager.getCurrentQuestNumber(),
+        [],
+        this.questManager.getProgress(),
+        Avalon.ORDER,
+        Avalon.QUEST_ASSIGNS,
+        this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS
+      );
+      const resp = await this.api.chat.postMessage({
+        channel: this.gameState.playerDms[p.id],
+        blocks
+      });
       player_messages.set(p.id, resp.ts);
     }));
 
@@ -673,8 +583,23 @@ export class Avalon {
 
       // Update quest status for all players
       this.gameState.players.forEach(p => {
-        const message = this.composeQuestMessage(p, questPlayers, leader, Array.from(playerIdsWhoHaveQuested));
-        this.api.chat.update({ ...message, ts: player_messages.get(p.id) });
+        const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
+          questPlayers,
+          this.gameState.players,
+          p,
+          leader,
+          this.questManager.getCurrentQuestNumber(),
+          Array.from(playerIdsWhoHaveQuested) as string[],
+          this.questManager.getProgress(),
+          Avalon.ORDER,
+          Avalon.QUEST_ASSIGNS,
+          this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS
+        );
+        this.api.chat.update({
+          channel: this.gameState.playerDms[p.id],
+          ts: player_messages.get(p.id),
+          blocks
+        });
       });
 
       // Resolve the promise for this player
@@ -691,20 +616,21 @@ export class Avalon {
 
     // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
     let questAssign = this.questManager.getCurrentQuestAssignment();
+    const currentQuestNumber = this.questManager.getCurrentQuestNumber();
     let questResult;
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
         this.questManager.recordQuestResult("good");
-        await this.broadcastQuestResult(questPlayers, "success", failed.length, 0);
+        await this.broadcastQuestResult(questPlayers, "success", failed.length, 0, currentQuestNumber);
         questResult = "good";
       } else {
         this.questManager.recordQuestResult("bad");
-        await this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f);
+        await this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f, currentQuestNumber);
         questResult = "bad";
       }
     } else {
       this.questManager.recordQuestResult("good");
-      await this.broadcastQuestResult(questPlayers, "success", 0, 0);
+      await this.broadcastQuestResult(questPlayers, "success", 0, 0, currentQuestNumber);
       questResult = "good";
     }
     // 4. Await the endgame evaluation
@@ -712,11 +638,11 @@ export class Avalon {
     return true;
   }
 
-  async broadcastQuestResult(questPlayers: Player[], result: "success" | "failure", failCount: number, failsRequired: number): Promise<void> {
+  async broadcastQuestResult(questPlayers: Player[], result: "success" | "failure", failCount: number, failsRequired: number, questNumber: number): Promise<void> {
     const blocks: any[] = [];
 
     // Header
-    const questName = Avalon.ORDER[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + Avalon.ORDER[this.questManager.getCurrentQuestNumber()].slice(1);
+    const questName = Avalon.ORDER[questNumber].charAt(0).toUpperCase() + Avalon.ORDER[questNumber].slice(1);
     const resultEmoji = result === "success" ? "✅" : "❌";
     const resultText = result === "success" ? "SUCCESS" : "FAILED";
 

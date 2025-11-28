@@ -640,4 +640,121 @@ export class MessageBlockBuilder {
 
     return blocks;
   }
+
+  /**
+   * Creates blocks for quest execution (in progress)
+   */
+  static createQuestExecutionBlocks(
+    questPlayers: Player[],
+    allPlayers: Player[],
+    viewingPlayer: Player,
+    leader: Player,
+    questNumber: number,
+    playerIdsWhoHaveQuested: string[],
+    questProgress: string[],
+    questOrder: string[],
+    questAssigns: QuestAssignment[][],
+    minPlayers: number
+  ): any[] {
+    const M = require("./message-helpers");
+    
+    let order = allPlayers.map((p) =>
+      p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
+    );
+
+    const header_blocks = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `${questOrder[questNumber].charAt(0).toUpperCase() + questOrder[questNumber].slice(1)} Quest - In Progress`,
+          emoji: true
+        }
+      },
+      ...MessageBlockBuilder.createQuestProgressBlocks(questProgress, questOrder, true, questAssigns, minPlayers, questNumber),
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*Quest Team:* ${M.pp(questPlayers)}`
+        }
+      },
+      {
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `Player order: ${order.join(', ')}`
+        }]
+      },
+      { type: 'divider' }
+    ];
+
+    const summary_blocks = []
+    if(questPlayers.length > playerIdsWhoHaveQuested.length) {
+      const still_waiting_on = `*Waiting for:* ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.id)))}`
+
+      summary_blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: still_waiting_on
+        }
+      })
+    } else {
+      summary_blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `:white_check_mark: All quest members have submitted their choices!`
+        }
+      })
+    }
+
+    const action_blocks = []
+    if(questPlayers.map(x => x.id).includes(viewingPlayer.id) && !playerIdsWhoHaveQuested.includes(viewingPlayer.id)) {
+
+      const action_buttons = [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: ":white_check_mark: Succeed",
+            emoji: true,
+          },
+          value: "succeed",
+          action_id: "succeed",
+        }
+      ]
+
+      // Only baddies can fail missions
+      if(!["good", "merlin", "percival"].includes(viewingPlayer.role)) {
+        action_buttons.push(
+          {
+            type: "button",
+            text: {
+              type: "plain_text",
+              text: ":x: Fail",
+              emoji: true,
+            },
+            value: "fail",
+            action_id: "fail",
+          }
+        )
+      }
+
+      action_blocks.push(
+        {
+          type: "actions",
+          block_id: "quest-success-vote",
+          elements: action_buttons
+        }
+      )
+    }
+
+    return [
+      ...header_blocks,
+      ...summary_blocks,
+      ...action_blocks
+    ];
+  }
 }
