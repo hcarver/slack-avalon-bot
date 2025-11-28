@@ -3,109 +3,26 @@
 import { App } from "@slack/bolt";
 
 import { GameUILayer } from "./game-ui-layer";
-const { v4: uuidv4 } = require('uuid');
+import { BoltListenerManager } from "./infrastructure/BoltListenerManager";
 
 const _ = require("lodash");
 const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
-// Wrapper for Bolt to allow message listener management by UUID
-class BoltWithListeners {
-  bolt: App;
-  messageListeners: Map<string, (event: {event?}) => void>;
-  actionListeners: Map<string, (context: any) => void>;
-
-  constructor(bolt: App) {
-    this.bolt = bolt;
-    this.messageListeners = new Map();
-    this.actionListeners = new Map();
-    // Register a single handler that dispatches to all listeners
-    this.bolt.event('message', async (message) => {
-      for (const listener of this.messageListeners.values()) {
-        try {
-          await listener(message);
-        } catch (e) {
-          // Optionally log error
-        }
-      }
-    });
-    // Register a single action handler that dispatches to all listeners
-    this.bolt.action(/.*/, async (context) => {
-      if (
-        "actions" in context.body &&
-        Array.isArray((context.body as any).actions) &&
-        (context.body as any).actions.length > 0
-      ) {
-        const blockId = (context.body as any).actions[0].block_id;
-        if (blockId && this.actionListeners.has(blockId)) {
-          try {
-            await this.actionListeners.get(blockId)!(context);
-          } catch (e) {
-            // Optionally log error
-          }
-        }
-      }
-    });
-  }
-
-  get client() {
-    return this.bolt.client;
-  }
-
-  addMessageListener(fn: (event: {event?}) => void): string {
-    const id = uuidv4();
-    this.messageListeners.set(id, fn);
-    return id;
-  }
-
-  /**
-   * Add an action listener for a specific block_id.
-   * @param block_id - The block_id to listen for
-   * @param fn - The callback to invoke when the action is triggered
-   * @returns The block_id (used for removal)
-   */
-  addActionListener(block_id: string, fn: (context: any) => void): string {
-    this.actionListeners.set(block_id, fn);
-    return block_id;
-  }
-
-  removeMessageListener(id: string) {
-    this.messageListeners.delete(id);
-  }
-
-  removeActionListener(block_id: string) {
-    this.actionListeners.delete(block_id);
-  }
-
-  event(eventName: string, ...listeners: any[]): void;
-  event(eventName: RegExp, ...listeners: any[]): void;
-  event(eventName: string | RegExp, ...listeners: any[]): void {
-    return this.bolt.event(eventName as any, ...listeners);
-  }
-
-  action(actionIdOrConstraints: any, listener: any) {
-    return this.bolt.action(actionIdOrConstraints, listener);
-  }
-
-  start() {
-    // The start method usually takes no arguments or a config object
-    return this.bolt.start();
-  }
-}
 
 export class Bot {
   isPolling: boolean;
   api: any;
   gameConfig: any;
   game: any;
-  bolt: BoltWithListeners;
+  bolt: BoltListenerManager;
 
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
   constructor(token, connectionToken) {
-    this.bolt = new BoltWithListeners(new App({
+    this.bolt = new BoltListenerManager(new App({
       token,
       appToken: connectionToken,
       socketMode: true,
@@ -246,7 +163,7 @@ export class Bot {
         if(playerSet.size < Avalon.MAX_PLAYERS) {
           playerSet.add(event.user);
           players.push(event.user);
-          
+
           // Update the message
           await this.api.chat.update({
             ts: messageTs,

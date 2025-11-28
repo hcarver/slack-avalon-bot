@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "module": "nodenext",
     "moduleResolution": "nodenext",
     "outDir": "./built",
     "allowJs": true,
