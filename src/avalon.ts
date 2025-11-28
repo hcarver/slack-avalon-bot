@@ -7,7 +7,7 @@ import { GameUILayer } from "./game-ui-layer";
 import { RoleManager } from "./role-manager";
 import { MessageBlockBuilder } from "./message-block-builder";
 import { QuestManager } from "./quest-manager";
-import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role } from "./types";
+import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal } from "./types";
 
 const M = require("./message-helpers");
 require("string_score");
@@ -349,10 +349,10 @@ export class Avalon {
     return true;
   }
 
-  questHistoryMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
-    const teamNomination = `${M.formatAtUser(sendingPlayerId)} nominated ${M.pp(
-      questingPlayerIds,
-    )} for the ${Avalon.ORDER[questNumber]} quest`;
+  questHistoryMessage(proposal: TeamProposal, to_player, approving_players=[], rejecting_players=[]) {
+    const teamNomination = `${M.formatAtUser(proposal.leader.id)} nominated ${M.pp(
+      proposal.members,
+    )} for the ${Avalon.ORDER[proposal.questNumber]} quest`;
 
     const votedCount = approving_players.length + rejecting_players.length;
     const totalVotes = this.players.length;
@@ -384,7 +384,7 @@ export class Avalon {
           type: "section",
           text: {
             type: "mrkdwn",
-            text: `*${Avalon.ORDER[questNumber].charAt(0).toUpperCase() + Avalon.ORDER[questNumber].slice(1)} Quest - Vote Result*\n${teamNomination}`
+            text: `*${Avalon.ORDER[proposal.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[proposal.questNumber].slice(1)} Quest - Vote Result*\n${teamNomination}`
           }
         },
         {
@@ -407,10 +407,10 @@ export class Avalon {
     }
   }
 
-  voteForQuestMessage(sendingPlayerId, questingPlayerIds, questNumber, to_player, approving_players=[], rejecting_players=[]) {
-    const teamNomination = `${M.formatAtUser(sendingPlayerId)} is nominating ${M.pp(
-      questingPlayerIds,
-    )} for the ${Avalon.ORDER[questNumber]} quest`;
+  voteForQuestMessage(proposal: TeamProposal, to_player, approving_players=[], rejecting_players=[]) {
+    const teamNomination = `${M.formatAtUser(proposal.leader.id)} is nominating ${M.pp(
+      proposal.members,
+    )} for the ${Avalon.ORDER[proposal.questNumber]} quest`;
 
     const votedCount = approving_players.length + rejecting_players.length;
     const totalVotes = this.players.length;
@@ -470,7 +470,7 @@ export class Avalon {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `*${Avalon.ORDER[questNumber].charAt(0).toUpperCase() + Avalon.ORDER[questNumber].slice(1)} Quest - Team Vote*\n${teamNomination}\n*Attempt:* ${this.rejectCount + 1}/5`
+          text: `*${Avalon.ORDER[proposal.questNumber].charAt(0).toUpperCase() + Avalon.ORDER[proposal.questNumber].slice(1)} Quest - Team Vote*\n${teamNomination}\n*Attempt:* ${proposal.attemptNumber}/5`
         }
       },
       {
@@ -545,10 +545,19 @@ export class Avalon {
     );
     const idxs = await playerChoice as number[];
     const questPlayers = idxs.map((i) => this.players[i]);
+    
+    // Create TeamProposal value object
+    const proposal = new TeamProposal(
+      player,
+      questPlayers,
+      this.questManager.getCurrentQuestNumber(),
+      this.rejectCount + 1
+    );
+    
     this.questPlayers = questPlayers;
 
     // Auto-accept teams on the 5th attempt
-    if(this.rejectCount >= 4) {
+    if(proposal.isLastAttempt()) {
       return true;
     }
 
@@ -557,14 +566,14 @@ export class Avalon {
     // This is necessary, rather than a map, because we use the same player id multiple times in dev
     const player_messages: Array<[{id: string}, string]> = [];
     await Promise.all(this.players.map(async (p) => {
-      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(player.id, questPlayers, this.questManager.getCurrentQuestNumber(), p));
+      const resp = await this.api.chat.postMessage(this.voteForQuestMessage(proposal, p));
       player_messages.push([p, resp.ts]);
     }));
 
     // Helper to update voting status for all players
     const updateVotingStatus = () => {
       player_messages.forEach(([p, ts]) => {
-        let updated_version = this.voteForQuestMessage(player.id, questPlayers, this.questManager.getCurrentQuestNumber(), p, approveVotes, rejectVotes);
+        let updated_version = this.voteForQuestMessage(proposal, p, approveVotes, rejectVotes);
         this.api.chat.update({ ...updated_version, ts: ts });
       })
     };
@@ -618,7 +627,7 @@ export class Avalon {
 
     // After all votes are in, update quest history for all players
     player_messages.map(([p, ts]) => {
-      let updated_version = this.questHistoryMessage(player.id, questPlayers, this.questManager.getCurrentQuestNumber(), p, approveVotes, rejectVotes);
+      let updated_version = this.questHistoryMessage(proposal, p, approveVotes, rejectVotes);
       this.api.chat.update({ ...updated_version, ts: ts });
     })
 
