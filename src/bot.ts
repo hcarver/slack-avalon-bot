@@ -298,9 +298,8 @@ export class Bot {
       role_names.forEach(role => this.gameConfig.specialRoles.push(role));
 
       // Create and configure game
-      // NOTE: Avalon should create its own messages object in its constructor
       let game = (this.game = new Avalon(gameUx, this.api, this.bolt, channel, players));
-      _.extend(game, this.gameConfig);
+      game.configure(this.gameConfig);
 
       // Open DMs for all players
       const playerDms = await SlackApiRx.openDms(this.api, players);

@@ -40,3 +40,4 @@ export type QuestResult = 'good' | 'bad';
 export type QuestPhase = 'Team Selection' | 'Team Voting' | 'Quest';
 
 export { TeamProposal } from './domain/TeamProposal';
+export { GameState } from './domain/GameState';

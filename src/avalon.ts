@@ -7,29 +7,22 @@ import { GameUILayer } from "./game-ui-layer";
 import { RoleManager } from "./role-manager";
 import { MessageBlockBuilder } from "./message-block-builder";
 import { QuestManager } from "./quest-manager";
-import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal } from "./types";
+import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
 require("string_score");
 
 export class Avalon {
-  players: Player[];
-  playerDms: Record<string, string>;
+  gameState!: GameState; // Initialized in start()
   gameUx: GameUILayer;
   api: webApi.WebClient;
-  date: Date;
-  channel: any;
-  isRunning: boolean;
-  questManager: QuestManager;
-  rejectCount: number;
-  specialRoles: Role[];
-  evils: Player[];
-  assassin: Player;
-  resistance: boolean;
-  questPlayers: Player[];
-  bolt: any; // Added for message listening
-  private _gameEnded: boolean = false;
-  private currentLeaderIndex: number;
+  questManager!: QuestManager; // Initialized in start()
+  bolt: any;
+  
+  // Temporary storage until start() is called
+  private channel: any;
+  private playerIds: string[];
+  private config: GameConfig; // Added for message listening
 
   static MIN_PLAYERS = 5;
 
@@ -146,32 +139,33 @@ export class Avalon {
     this.api = api;
     this.gameUx = gameUx;
     this.bolt = bolt;
-
     this.channel = channel;
-    this.players = players.map((id) => ({ id }));
-    Object.assign(this, Avalon.DEFAULT_CONFIG);
-    this._gameEnded = false;
+    this.playerIds = players;
+    this.config = structuredClone(Avalon.DEFAULT_CONFIG);
+  }
+
+  configure(config: Partial<GameConfig>): void {
+    if (config.resistance !== undefined) {
+      this.config.resistance = config.resistance;
+    }
+    if (config.specialRoles) {
+      this.config.specialRoles = [...config.specialRoles];
+    }
+    if (config.order) {
+      this.config.order = config.order;
+    }
   }
 
   start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
-    this.isRunning = true;
-    this.questManager = new QuestManager(
-      this.players.length,
-      this.players.length - Avalon.MIN_PLAYERS,
-      Avalon.QUEST_ASSIGNS
-    );
-    this.rejectCount = 0;
-    this.playerDms = playerDms;
-    this.date = new Date();
-    this.currentLeaderIndex = 0;
-
-    let players = (this.players = this.playerOrder(this.players));
+    
+    const playerObjs = this.playerIds.map((id) => ({ id }));
+    let players = this.playerOrder(playerObjs);
     let assigns = this.getRoleAssigns(
-      Avalon.getAssigns(players.length, this.specialRoles, this.resistance),
+      Avalon.getAssigns(players.length, this.config.specialRoles, this.config.resistance),
     );
 
-    let evils = (this.evils = []);
+    let evils = [];
     for (let i = 0; i < players.length; i++) {
       let player = players[i];
       player.role = assigns[i];
@@ -184,9 +178,22 @@ export class Avalon {
       }
     }
 
-    if (!this.resistance) {
-      this.assassin = this.getAssassin();
-    }
+    const assassin = this.config.resistance ? evils[0] : this.getAssassin(evils);
+
+    // Create GameState once with all proper values
+    this.gameState = new GameState(
+      players,
+      playerDms,
+      this.channel,
+      this.config.resistance,
+      this.config.specialRoles,
+      evils,
+      assassin
+    );
+
+    this.questManager = new QuestManager(
+      Avalon.QUEST_ASSIGNS[this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS]
+    );
 
     const presentRoles = players.map(p => p.role).filter((r): r is Role => r !== undefined);
 
@@ -210,32 +217,31 @@ export class Avalon {
     .join(", ");
 
     const all_player_blocks = [
-      {type: "markdown", text: `${this.evils.length} out of ${this.players.length} players are evil.`},
+      {type: "markdown", text: `${this.gameState.getEvilCount()} out of ${this.gameState.getPlayerCount()} players are evil.`},
       {type: "markdown", text: `Special roles: ${specialRoles}`}
     ];
 
     let knownEvils = evils.filter((player) => player.role != "oberon");
-    for (let player of this.players) {
+    for (let player of this.gameState.players) {
       const roleBlocks = MessageBlockBuilder.createRoleInfoBlocks(
         player,
         players,
         evils,
         knownEvils,
-        this.assassin.id,
-        this.evils.length,
-        this.players.length
+        this.gameState.assassin.id,
+        this.gameState.getEvilCount(),
+        this.gameState.getPlayerCount()
       );
 
       this.api.chat.postMessage({
-        channel: this.playerDms[player.id],
+        channel: this.gameState.playerDms[player.id],
         blocks: roleBlocks,
         text: `You are ${Avalon.ROLES[player.role]}`
       });
     }
 
-    this._gameEnded = false;
     (async () => {
-      while (!this._gameEnded) {
+      while (!this.gameState.isGameEnded()) {
         await this.playRound();
       }
     })();
@@ -250,32 +256,31 @@ export class Avalon {
     return _.shuffle(players);
   }
 
-  getAssassin(): Player {
-    let assassinArray = this.evils.filter((player) => player.role == "assassin");
+  getAssassin(evils: Player[]): Player {
+    let assassinArray = evils.filter((player) => player.role == "assassin");
     if (assassinArray.length) {
       return assassinArray[0];
     } else {
-      return _.shuffle(this.evils)[0];
+      return _.shuffle(evils)[0];
     }
   }
 
   quit() {
-    this._gameEnded = true;
-    this.isRunning = false;
+    this.gameState.endGame();
   }
 
   async playRound() {
-    const leader = this.players[this.currentLeaderIndex];
+    const leader = this.gameState.getCurrentLeader();
     await this.deferredActionForPlayer(leader);
-    this.currentLeaderIndex = (this.currentLeaderIndex + 1) % this.players.length;
+    this.gameState.advanceLeader();
   }
 
   endGame(message: string, color: string, current: boolean): void {
-    const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.players, this.questManager.getProgress(), Avalon.ORDER);
+    const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.gameState.players, this.questManager.getProgress(), Avalon.ORDER);
 
-    this.players.forEach(p => {
+    this.gameState.players.forEach(p => {
       this.api.chat.postMessage({
-        channel: this.playerDms[p.id],
+        channel: this.gameState.playerDms[p.id],
         blocks: blocks,
         text: message
       });
@@ -297,7 +302,7 @@ export class Avalon {
       Avalon.ORDER[this.questManager.getCurrentQuestNumber()]
     } quest.`;
 
-    let order = this.players.map((p) =>
+    let order = this.gameState.players.map((p) =>
       p.id == player.id
         ? `*${M.formatAtUser(p.id)}*`
         : M.formatAtUser(p.id),
@@ -312,12 +317,12 @@ export class Avalon {
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.players.length - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${M.formatAtUser(player.id)}* will choose${message}\n*Attempt:* ${this.rejectCount + 1}/5`
+          text: `*${M.formatAtUser(player.id)}* will choose${message}\n*Attempt:* ${this.gameState.rejectCount + 1}/5`
         }
       },
       {
@@ -330,21 +335,21 @@ export class Avalon {
       { type: 'divider' }
     ];
 
-    this.players.forEach(p => {
+    this.gameState.players.forEach(p => {
       this.api.chat.postMessage({
-        channel: this.playerDms[p.id],
+        channel: this.gameState.playerDms[p.id],
         blocks: statusBlocks,
-        text: `${M.formatAtUser(player.id)} will choose${message} (attempt number ${this.rejectCount + 1})`
+        text: `${M.formatAtUser(player.id)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
       });
     });
 
     const successful = await this.choosePlayersForQuest(player);
     if (successful) {
-      this.rejectCount = 0;
+      this.gameState.resetRejectCount();
       await new Promise(resolve => setTimeout(resolve, timeToPause));
-      return await this.runQuest(this.questPlayers, player);
+      return await this.runQuest(this.gameState.questPlayers, player);
     }
-    this.rejectCount++;
+    this.gameState.incrementRejectCount();
 
     return true;
   }
@@ -355,10 +360,10 @@ export class Avalon {
     )} for the ${Avalon.ORDER[proposal.questNumber]} quest`;
 
     const votedCount = approving_players.length + rejecting_players.length;
-    const totalVotes = this.players.length;
+    const totalVotes = this.gameState.getPlayerCount();
 
     // Build player status list with icons
-    const playerStatusList = this.players.map(p => {
+    const playerStatusList = this.gameState.players.map(p => {
       if (approving_players.some(ap => ap.id === p.id)) {
         return `✅ ${M.formatAtUser(p.id)}`;
       } else if (rejecting_players.some(rp => rp.id === p.id)) {
@@ -377,7 +382,7 @@ export class Avalon {
     }
 
     return {
-      channel: this.playerDms[to_player.id],
+      channel: this.gameState.playerDms[to_player.id],
       text: `${teamNomination} - ${statusText}`,
       blocks: [
         {
@@ -413,7 +418,7 @@ export class Avalon {
     )} for the ${Avalon.ORDER[proposal.questNumber]} quest`;
 
     const votedCount = approving_players.length + rejecting_players.length;
-    const totalVotes = this.players.length;
+    const totalVotes = this.gameState.players.length;
     const allVotesIn = votedCount === totalVotes;
 
     // Create progress bar
@@ -423,7 +428,7 @@ export class Avalon {
     let playerStatusList: string;
     if (allVotesIn) {
       // Show actual votes only after all votes are in
-      playerStatusList = this.players.map(p => {
+      playerStatusList = this.gameState.players.map(p => {
         if (approving_players.some(ap => ap.id === p.id)) {
           return `✅ ${M.formatAtUser(p.id)}`;
         } else if (rejecting_players.some(rp => rp.id === p.id)) {
@@ -434,7 +439,7 @@ export class Avalon {
       }).join('\n');
     } else {
       // Before all votes are in, only show who has voted (not how they voted)
-      playerStatusList = this.players.map(p => {
+      playerStatusList = this.gameState.players.map(p => {
         const hasVoted = approving_players.some(ap => ap.id === p.id) ||
                         rejecting_players.some(rp => rp.id === p.id);
         if (hasVoted) {
@@ -524,7 +529,7 @@ export class Avalon {
     }
 
     return {
-      channel: this.playerDms[to_player.id],
+      channel: this.gameState.playerDms[to_player.id],
       text: `${teamNomination} - ${statusText}`,
       blocks: blocks
     };
@@ -535,26 +540,26 @@ export class Avalon {
 
     // Await the player's team choice
     const playerChoice = this.gameUx.pollForDecision(
-      this.playerDms[player.id],
+      this.gameState.playerDms[player.id],
       `Choose a team of ${questAssign.n}`,
-      this.players.map((player) => M.formatAtUser(player)),
+      this.gameState.players.map((player) => M.formatAtUser(player)),
       "Nominate",
       (user_id) => user_id === player.id,
       questAssign.n,
       questAssign.n,
     );
     const idxs = await playerChoice as number[];
-    const questPlayers = idxs.map((i) => this.players[i]);
+    const questPlayers = idxs.map((i) => this.gameState.players[i]);
     
     // Create TeamProposal value object
     const proposal = new TeamProposal(
       player,
       questPlayers,
       this.questManager.getCurrentQuestNumber(),
-      this.rejectCount + 1
+      this.gameState.rejectCount + 1
     );
     
-    this.questPlayers = questPlayers;
+    this.gameState.questPlayers = questPlayers;
 
     // Auto-accept teams on the 5th attempt
     if(proposal.isLastAttempt()) {
@@ -565,7 +570,7 @@ export class Avalon {
     // List of player ids and timestamps
     // This is necessary, rather than a map, because we use the same player id multiple times in dev
     const player_messages: Array<[{id: string}, string]> = [];
-    await Promise.all(this.players.map(async (p) => {
+    await Promise.all(this.gameState.players.map(async (p) => {
       const resp = await this.api.chat.postMessage(this.voteForQuestMessage(proposal, p));
       player_messages.push([p, resp.ts]);
     }));
@@ -585,7 +590,7 @@ export class Avalon {
     const voteResolvers = new Map(); // Store promise resolvers for each player
 
     // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
-    const uniquePlayers: {id: string}[] = [...new Set(this.players.map((p: any) => p.id))].map((id: string) => this.players.find((p: any) => p.id === id));
+    const uniquePlayers: {id: string}[] = [...new Set(this.gameState.players.map((p: any) => p.id))].map((id: string) => this.gameState.players.find((p: any) => p.id === id));
 
     // Create promises for each player's vote
     const votePromises = uniquePlayers.map((p: {id: string}) => {
@@ -637,13 +642,13 @@ export class Avalon {
   getStatus(current: boolean): string {
     let status = this.questManager.getProgress().map((res, i) => {
       let questAssign =
-        Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][i];
+        Avalon.QUEST_ASSIGNS[this.gameState.players.length - Avalon.MIN_PLAYERS][i];
       let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
       return `${questAssign.n}${questAssign.f > 1 ? "*" : ""}${circle}`;
     });
     if (current) {
       let questAssign =
-        Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
+        Avalon.QUEST_ASSIGNS[this.gameState.players.length - Avalon.MIN_PLAYERS][
           this.questManager.getCurrentQuestNumber()
         ];
       status.push(
@@ -654,7 +659,7 @@ export class Avalon {
       status = status.concat(
         _.times(Avalon.ORDER.length - status.length, (i) => {
           let questAssign =
-            Avalon.QUEST_ASSIGNS[this.players.length - Avalon.MIN_PLAYERS][
+            Avalon.QUEST_ASSIGNS[this.gameState.players.length - Avalon.MIN_PLAYERS][
               i + status.length
             ];
           return `${questAssign.n}${
@@ -667,7 +672,7 @@ export class Avalon {
   }
 
   composeQuestMessage(player, questPlayers, leader, playerIdsWhoHaveQuested=[]) {
-    let order = this.players.map((p) =>
+    let order = this.gameState.players.map((p) =>
       p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
     );
 
@@ -680,7 +685,7 @@ export class Avalon {
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.players.length - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.gameState.players.length - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
       {
         type: 'section',
         text: {
@@ -762,7 +767,7 @@ export class Avalon {
     }
 
     return {
-      channel: this.playerDms[player.id],
+      channel: this.gameState.playerDms[player.id],
       blocks: [
         ...header_blocks,
         ...summary_blocks,
@@ -774,7 +779,7 @@ export class Avalon {
   async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
     // 1. Send quest messages to all players and collect their message timestamps
     const player_messages = new Map();
-    await Promise.all(this.players.map(async (p) => {
+    await Promise.all(this.gameState.players.map(async (p) => {
       const message = this.composeQuestMessage(p, questPlayers, leader);
       const resp = await this.api.chat.postMessage(message);
       player_messages.set(p.id, resp.ts);
@@ -813,7 +818,7 @@ export class Avalon {
       else succeeded.push(player);
 
       // Update quest status for all players
-      this.players.forEach(p => {
+      this.gameState.players.forEach(p => {
         const message = this.composeQuestMessage(p, questPlayers, leader, Array.from(playerIdsWhoHaveQuested));
         this.api.chat.update({ ...message, ts: player_messages.get(p.id) });
       });
@@ -918,9 +923,9 @@ export class Avalon {
     });
 
     // Send to all players and wait for all messages to be sent
-    await Promise.all(this.players.map(p => {
+    await Promise.all(this.gameState.players.map(p => {
       return this.api.chat.postMessage({
-        channel: this.playerDms[p.id],
+        channel: this.gameState.playerDms[p.id],
         blocks: blocks,
         text: `${questName} Quest ${resultText}`
       });
@@ -936,7 +941,7 @@ export class Avalon {
       );
       return;
     } else if (score.good == 3) {
-      let merlinArray = this.players.filter((player) => player.role == "merlin");
+      let merlinArray = this.gameState.players.filter((player) => player.role == "merlin");
       if (!merlinArray.length) {
         this.endGame(
           `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
@@ -945,9 +950,9 @@ export class Avalon {
         );
         return;
       }
-      let assassin = this.assassin;
+      let assassin = this.gameState.assassin;
       let merlin = merlinArray[0];
-      const killablePlayers = this.players.filter((p) => p.role && RoleManager.isGoodPlayer(p.role));
+      const killablePlayers = this.gameState.players.filter((p) => p.role && RoleManager.isGoodPlayer(p.role));
       await this.assassinMerlinKill(assassin, merlin, killablePlayers);
     }
   }
@@ -958,9 +963,9 @@ export class Avalon {
     // Broadcast assassination phase announcement
     const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.id);
 
-    this.players.forEach(p => {
+    this.gameState.players.forEach(p => {
       this.api.chat.postMessage({
-        channel: this.playerDms[p.id],
+        channel: this.gameState.playerDms[p.id],
         blocks: announcementBlocks,
         text: `${M.formatAtUser(assassin.id)} is the ASSASSIN. They can now try to kill MERLIN.`
       });
@@ -986,7 +991,7 @@ export class Avalon {
     ];
 
     const playerChoice = this.gameUx.pollForDecision(
-      this.playerDms[assassin.id],
+      this.gameState.playerDms[assassin.id],
       `Choose who to assassinate`,
       killablePlayers.map((player) => M.formatAtUser(player)),
       "⚔️ Assassinate",
@@ -1003,15 +1008,15 @@ export class Avalon {
       accused.id,
       merlin.id,
       accused.role === "merlin",
-      this.players,
+      this.gameState.players,
       this.questManager.getProgress(),
       Avalon.ORDER,
       Avalon.QUEST_ASSIGNS,
-      this.players.length - Avalon.MIN_PLAYERS
+      this.gameState.players.length - Avalon.MIN_PLAYERS
     );
-    this.players.forEach(p => {
+    this.gameState.players.forEach(p => {
       this.api.chat.postMessage({
-        channel: this.playerDms[p.id],
+        channel: this.gameState.playerDms[p.id],
         blocks: resultBlocks,
         text: accused.role === "merlin" ? "Evil wins! Assassin killed Merlin!" : "Good wins! Assassin missed!"
       });

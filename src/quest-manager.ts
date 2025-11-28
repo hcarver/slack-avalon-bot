@@ -4,14 +4,11 @@ export class QuestManager {
   private progress: QuestResult[] = [];
   private questNumber: number = 0;
   private readonly minPlayers: number;
-  private readonly questAssigns: QuestAssignment[][];
+  private readonly questAssigns: QuestAssignment[];
 
   constructor(
-    numPlayers: number,
-    minPlayers: number,
-    questAssigns: QuestAssignment[][]
+    questAssigns: QuestAssignment[]
   ) {
-    this.minPlayers = minPlayers;
     this.questAssigns = questAssigns;
   }
 
@@ -26,14 +23,14 @@ export class QuestManager {
    * Get the quest assignment for the current quest
    */
   getCurrentQuestAssignment(): QuestAssignment {
-    return this.questAssigns[this.minPlayers][this.questNumber];
+    return this.questAssigns[this.questNumber];
   }
 
   /**
    * Get quest assignment for a specific quest number
    */
   getQuestAssignment(questNum: number): QuestAssignment {
-    return this.questAssigns[this.minPlayers][questNum];
+    return this.questAssigns[questNum];
   }
 
   /**
@@ -68,7 +65,7 @@ export class QuestManager {
    */
   checkGameEnd(): { ended: boolean; winner?: 'good' | 'evil'; reason?: string } {
     const score = this.calculateScore();
-    
+
     if (score.bad >= 3) {
       return {
         ended: true,
@@ -76,7 +73,7 @@ export class QuestManager {
         reason: 'failing 3 quests'
       };
     }
-    
+
     if (score.good >= 3) {
       return {
         ended: true,
@@ -84,7 +81,7 @@ export class QuestManager {
         reason: 'succeeding 3 quests'
       };
     }
-    
+
     return { ended: false };
   }
 
@@ -97,7 +94,7 @@ export class QuestManager {
   ): { result: QuestResult; message: string } {
     const questAssign = this.getCurrentQuestAssignment();
     const failCount = failedVotes.length;
-    
+
     if (failCount === 0) {
       return {
         result: 'good',
