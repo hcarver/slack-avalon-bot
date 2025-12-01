@@ -8,6 +8,7 @@ import { RoleManager } from "./role-manager";
 import { MessageBlockBuilder } from "./message-block-builder";
 import { QuestManager } from "./quest-manager";
 import { ActionCollector } from "./services/ActionCollector";
+import { TeamVotingService } from "./services/TeamVotingService";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -379,99 +380,21 @@ export class Avalon {
       this.gameState.rejectCount + 1
     );
 
-    this.gameState.questPlayers = questPlayers;
+    this.gameState.setQuestPlayers(questPlayers);
 
     // Auto-accept teams on the 5th attempt
     if(proposal.isLastAttempt()) {
       return true;
     }
 
-    // Send voting messages to all players and collect their message timestamps
-    // List of player ids and timestamps
-    // This is necessary, rather than a map, because we use the same player id multiple times in dev
-    const player_messages: Array<[{id: string}, string]> = [];
-    await Promise.all(this.gameState.players.map(async (p) => {
-      const blocks = MessageBlockBuilder.createTeamVoteBlocks(
-        proposal,
-        this.gameState.players,
-        p,
-        [],
-        [],
-        Avalon.ORDER
-      );
-      const resp = await this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks,
-        text: `Team vote for ${Avalon.ORDER[proposal.questNumber]} quest`
-      });
-      player_messages.push([p, resp.ts]);
-    }));
-
-    // Collect votes using ActionCollector
-    const approveVotes: Player[] = [];
-    const rejectVotes: Player[] = [];
-    
-    // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
-    const uniquePlayers: {id: string}[] = [...new Set(this.gameState.players.map((p: any) => p.id))].map((id: string) => this.gameState.players.find((p: any) => p.id === id));
-    
-    const voteCollector = new ActionCollector<{ player: Player; approve: boolean }>(
-      this.bolt,
-      "quest-team-vote",
-      uniquePlayers.map(p => p.id)
+    // Vote on the team
+    const teamVotingService = new TeamVotingService(this.api, this.bolt);
+    return await teamVotingService.voteOnTeam(
+      proposal,
+      this.gameState.players,
+      this.gameState.playerDms,
+      Avalon.ORDER
     );
-
-    voteCollector.start(
-      (userId, actionValue) => {
-        const player = uniquePlayers.find(p => p.id === userId);
-        if (!player) return null;
-        
-        const approve = actionValue === "approve";
-        if (approve) approveVotes.push(player);
-        else rejectVotes.push(player);
-        
-        return { player, approve };
-      },
-      () => {
-        // Update UI after each vote
-        player_messages.forEach(([p, ts]) => {
-          const blocks = MessageBlockBuilder.createTeamVoteBlocks(
-            proposal,
-            this.gameState.players,
-            p,
-            approveVotes,
-            rejectVotes,
-            Avalon.ORDER
-          );
-          this.api.chat.update({
-            channel: this.gameState.playerDms[p.id],
-            ts,
-            blocks,
-            text: `Team vote for ${Avalon.ORDER[proposal.questNumber]} quest`
-          });
-        });
-      }
-    );
-
-    await voteCollector.waitForAll();
-
-    // After all votes are in, update quest history for all players
-    player_messages.map(([p, ts]) => {
-      const blocks = MessageBlockBuilder.createTeamVoteHistoryBlocks(
-        proposal,
-        this.gameState.players,
-        approveVotes,
-        rejectVotes,
-        Avalon.ORDER
-      );
-      this.api.chat.update({
-        channel: this.gameState.playerDms[p.id],
-        ts,
-        blocks,
-        text: `Team vote result for ${Avalon.ORDER[proposal.questNumber]} quest`
-      });
-    })
-
-    return approveVotes.length > rejectVotes.length;
   }
 
   getStatus(current: boolean): string {
