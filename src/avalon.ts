@@ -7,6 +7,7 @@ import { GameUILayer } from "./game-ui-layer";
 import { RoleManager } from "./role-manager";
 import { MessageBlockBuilder } from "./message-block-builder";
 import { QuestManager } from "./quest-manager";
+import { ActionCollector } from "./services/ActionCollector";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -406,72 +407,52 @@ export class Avalon {
       player_messages.push([p, resp.ts]);
     }));
 
-    // Helper to update voting status for all players
-    const updateVotingStatus = () => {
-      player_messages.forEach(([p, ts]) => {
-        const blocks = MessageBlockBuilder.createTeamVoteBlocks(
-          proposal,
-          this.gameState.players,
-          p,
-          approveVotes,
-          rejectVotes,
-          Avalon.ORDER
-        );
-        this.api.chat.update({
-          channel: this.gameState.playerDms[p.id],
-          ts,
-          blocks,
-          text: `Team vote for ${Avalon.ORDER[proposal.questNumber]} quest`
-        });
-      })
-    };
-
-    // Collect votes from button clicks using addActionListener
-    const approveVotes = [];
-    const rejectVotes = [];
-    const votedPlayers = new Set();
-    const voteResolvers = new Map(); // Store promise resolvers for each player
-
+    // Collect votes using ActionCollector
+    const approveVotes: Player[] = [];
+    const rejectVotes: Player[] = [];
+    
     // We convert to a Set because in development we sometimes use a setup where the game has 5 copies of one single player.
     const uniquePlayers: {id: string}[] = [...new Set(this.gameState.players.map((p: any) => p.id))].map((id: string) => this.gameState.players.find((p: any) => p.id === id));
+    
+    const voteCollector = new ActionCollector<{ player: Player; approve: boolean }>(
+      this.bolt,
+      "quest-team-vote",
+      uniquePlayers.map(p => p.id)
+    );
 
-    // Create promises for each player's vote
-    const votePromises = uniquePlayers.map((p: {id: string}) => {
-      return new Promise(resolve => {
-        voteResolvers.set(p.id, resolve);
-      });
-    });
-
-    // Register a single action listener for all button clicks
-    const actionListenerId = this.bolt.addActionListener("quest-team-vote", async (context) => {
-      const userId = context.body.user.id;
-      const action = context.body.actions[0];
-      const voteValue = action.value; // "approve" or "reject"
-
-      if (votedPlayers.has(userId)) return; // Already voted
-
-      const player = uniquePlayers.find(p => p.id === userId);
-      if (!player) return; // Not a valid player
-
-      votedPlayers.add(userId);
-      const approve = voteValue === "approve";
-
-      if (approve) approveVotes.push(player);
-      else rejectVotes.push(player);
-
-      updateVotingStatus();
-
-      // Resolve the promise for this player
-      const resolver = voteResolvers.get(userId);
-      if (resolver) {
-        resolver({ player, approve });
+    voteCollector.start(
+      (userId, actionValue) => {
+        const player = uniquePlayers.find(p => p.id === userId);
+        if (!player) return null;
+        
+        const approve = actionValue === "approve";
+        if (approve) approveVotes.push(player);
+        else rejectVotes.push(player);
+        
+        return { player, approve };
+      },
+      () => {
+        // Update UI after each vote
+        player_messages.forEach(([p, ts]) => {
+          const blocks = MessageBlockBuilder.createTeamVoteBlocks(
+            proposal,
+            this.gameState.players,
+            p,
+            approveVotes,
+            rejectVotes,
+            Avalon.ORDER
+          );
+          this.api.chat.update({
+            channel: this.gameState.playerDms[p.id],
+            ts,
+            blocks,
+            text: `Team vote for ${Avalon.ORDER[proposal.questNumber]} quest`
+          });
+        });
       }
-    });
+    );
 
-    const votes = await Promise.all(votePromises);
-
-    // Clean up the action listener
-    this.bolt.removeActionListener(actionListenerId);
+    await voteCollector.waitForAll();
 
     // After all votes are in, update quest history for all players
     player_messages.map(([p, ts]) => {
@@ -550,69 +531,51 @@ export class Avalon {
     }));
 
     // 2. For each questing player, wait for their DM response (succeed/fail)
-    const failed = [];
-    const succeeded = [];
-    const playerIdsWhoHaveQuested = new Set();
+    const failed: Player[] = [];
+    const succeeded: Player[] = [];
 
-    // Use action listener for quest votes
-    const questVoteResolvers = new Map();
-    const questVotePromises = new Map();
+    const questCollector = new ActionCollector<{ player: Player; fail: boolean }>(
+      this.bolt,
+      "quest-success-vote",
+      questPlayers.map(p => p.id)
+    );
 
-    questPlayers.map((player) => {
-      const promise = new Promise(resolve => {
-        questVoteResolvers.set(player.id, resolve);
-      });
-      questVotePromises.set(player.id, promise);
-    });
-
-    // Register a single action listener for all quest succeed/fail button clicks
-    const questActionListenerId = this.bolt.addActionListener("quest-success-vote", async (context) => {
-      const userId = context.body.user.id;
-      const action = context.body.actions[0];
-      const voteValue = action.value; // "succeed" or "fail"
-
-      // Only allow questing players who haven't voted yet
-      if (!questPlayers.some(p => p.id === userId)) return;
-      if (playerIdsWhoHaveQuested.has(userId)) return;
-
-      playerIdsWhoHaveQuested.add(userId);
-      const player = questPlayers.find(p => p.id === userId);
-      const fail = voteValue === "fail";
-      if (fail) failed.push(player);
-      else succeeded.push(player);
-
-      // Update quest status for all players
-      this.gameState.players.forEach(p => {
-        const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
-          questPlayers,
-          this.gameState.players,
-          p,
-          leader,
-          this.questManager.getCurrentQuestNumber(),
-          Array.from(playerIdsWhoHaveQuested) as string[],
-          this.questManager.getProgress(),
-          Avalon.ORDER,
-          Avalon.QUEST_ASSIGNS,
-          this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS
-        );
-        this.api.chat.update({
-          channel: this.gameState.playerDms[p.id],
-          ts: player_messages.get(p.id),
-          blocks
+    questCollector.start(
+      (userId, actionValue) => {
+        const player = questPlayers.find(p => p.id === userId);
+        if (!player) return null;
+        
+        const fail = actionValue === "fail";
+        if (fail) failed.push(player);
+        else succeeded.push(player);
+        
+        return { player, fail };
+      },
+      () => {
+        // Update quest status for all players
+        this.gameState.players.forEach(p => {
+          const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
+            questPlayers,
+            this.gameState.players,
+            p,
+            leader,
+            this.questManager.getCurrentQuestNumber(),
+            questCollector.getCompleted(),
+            this.questManager.getProgress(),
+            Avalon.ORDER,
+            Avalon.QUEST_ASSIGNS,
+            this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS
+          );
+          this.api.chat.update({
+            channel: this.gameState.playerDms[p.id],
+            ts: player_messages.get(p.id),
+            blocks
+          });
         });
-      });
-
-      // Resolve the promise for this player
-      const resolver = questVoteResolvers.get(userId);
-      if (resolver) {
-        resolver({ player, fail });
       }
-    });
+    );
 
-    await Promise.all(questVotePromises.values());
-
-    // Clean up the action listener
-    this.bolt.removeActionListener(questActionListenerId);
+    await questCollector.waitForAll();
 
     // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
     let questAssign = this.questManager.getCurrentQuestAssignment();
