@@ -9,6 +9,7 @@ import { MessageBlockBuilder } from "./message-block-builder";
 import { QuestManager } from "./quest-manager";
 import { ActionCollector } from "./services/ActionCollector";
 import { TeamVotingService } from "./services/TeamVotingService";
+import { QuestExecutionService } from "./services/QuestExecutionService";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -319,7 +320,7 @@ export class Avalon {
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, Avalon.QUEST_ASSIGNS, this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS, this.questManager.getCurrentQuestNumber()),
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, this.questManager.getAllQuestAssignments(), this.questManager.getCurrentQuestNumber()),
       {
         type: 'section',
         text: {
@@ -431,95 +432,36 @@ export class Avalon {
 
 
   async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
-    // 1. Send quest messages to all players and collect their message timestamps
-    const player_messages = new Map();
-    await Promise.all(this.gameState.players.map(async (p) => {
-      const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
-        questPlayers,
-        this.gameState.players,
-        p,
-        leader,
-        this.questManager.getCurrentQuestNumber(),
-        [],
-        this.questManager.getProgress(),
-        Avalon.ORDER,
-        Avalon.QUEST_ASSIGNS,
-        this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS
-      );
-      const resp = await this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks
-      });
-      player_messages.set(p.id, resp.ts);
-    }));
-
-    // 2. For each questing player, wait for their DM response (succeed/fail)
-    const failed: Player[] = [];
-    const succeeded: Player[] = [];
-
-    const questCollector = new ActionCollector<{ player: Player; fail: boolean }>(
-      this.bolt,
-      "quest-success-vote",
-      questPlayers.map(p => p.id)
+    const questExecutionService = new QuestExecutionService(this.api, this.bolt);
+    
+    const { failed, succeeded } = await questExecutionService.executeQuest(
+      questPlayers,
+      this.gameState.players,
+      leader,
+      this.questManager.getCurrentQuestNumber(),
+      this.questManager.getProgress(),
+      this.gameState.playerDms,
+      Avalon.ORDER,
+      this.questManager.getAllQuestAssignments()
     );
 
-    questCollector.start(
-      (userId, actionValue) => {
-        const player = questPlayers.find(p => p.id === userId);
-        if (!player) return null;
-        
-        const fail = actionValue === "fail";
-        if (fail) failed.push(player);
-        else succeeded.push(player);
-        
-        return { player, fail };
-      },
-      () => {
-        // Update quest status for all players
-        this.gameState.players.forEach(p => {
-          const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
-            questPlayers,
-            this.gameState.players,
-            p,
-            leader,
-            this.questManager.getCurrentQuestNumber(),
-            questCollector.getCompleted(),
-            this.questManager.getProgress(),
-            Avalon.ORDER,
-            Avalon.QUEST_ASSIGNS,
-            this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS
-          );
-          this.api.chat.update({
-            channel: this.gameState.playerDms[p.id],
-            ts: player_messages.get(p.id),
-            blocks
-          });
-        });
-      }
-    );
-
-    await questCollector.waitForAll();
-
-    // 3. After all votes, update quest results, broadcast the outcome, and return the quest score object
+    // Evaluate quest result and record it
     let questAssign = this.questManager.getCurrentQuestAssignment();
     const currentQuestNumber = this.questManager.getCurrentQuestNumber();
-    let questResult;
+    
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
         this.questManager.recordQuestResult("good");
         await this.broadcastQuestResult(questPlayers, "success", failed.length, 0, currentQuestNumber);
-        questResult = "good";
       } else {
         this.questManager.recordQuestResult("bad");
         await this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f, currentQuestNumber);
-        questResult = "bad";
       }
     } else {
       this.questManager.recordQuestResult("good");
       await this.broadcastQuestResult(questPlayers, "success", 0, 0, currentQuestNumber);
-      questResult = "good";
     }
-    // 4. Await the endgame evaluation
+    
     await this.evaluateEndGame(this.questManager.calculateScore());
     return true;
   }
@@ -677,8 +619,7 @@ export class Avalon {
       this.gameState.players,
       this.questManager.getProgress(),
       Avalon.ORDER,
-      Avalon.QUEST_ASSIGNS,
-      this.gameState.players.length - Avalon.MIN_PLAYERS
+      this.questManager.getAllQuestAssignments()
     );
     this.gameState.players.forEach(p => {
       this.api.chat.postMessage({

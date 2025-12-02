@@ -3,7 +3,6 @@ import { Player, QuestAssignment, QuestResult } from "./types";
 export class QuestManager {
   private progress: QuestResult[] = [];
   private questNumber: number = 0;
-  private readonly minPlayers: number;
   private readonly questAssigns: QuestAssignment[];
 
   constructor(
@@ -31,6 +30,13 @@ export class QuestManager {
    */
   getQuestAssignment(questNum: number): QuestAssignment {
     return this.questAssigns[questNum];
+  }
+
+  /**
+   * Get all quest assignments
+   */
+  getAllQuestAssignments(): QuestAssignment[] {
+    return [...this.questAssigns];
   }
 
   /**

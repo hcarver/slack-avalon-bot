@@ -204,8 +204,7 @@ export class MessageBlockBuilder {
     progress: string[],
     questOrder: string[],
     current: boolean = false,
-    questAssigns?: QuestAssignment[][],
-    minPlayers?: number,
+    questAssignments?: QuestAssignment[],
     currentQuestNum?: number
   ): any[] {
     const blocks = [];
@@ -216,8 +215,8 @@ export class MessageBlockBuilder {
       const questName = questOrder[i].charAt(0).toUpperCase() + questOrder[i].slice(1);
       
       let numPlayers = "";
-      if (questAssigns && minPlayers !== undefined) {
-        const assignment = questAssigns[minPlayers][i];
+      if (questAssignments) {
+        const assignment = questAssignments[i];
         numPlayers = ` (${assignment.n}${assignment.f > 1 ? '*' : ''})`;
       }
 
@@ -259,8 +258,7 @@ export class MessageBlockBuilder {
     questName: string,
     progress: string[],
     questOrder: string[],
-    questAssigns: QuestAssignment[][],
-    minPlayers: number,
+    questAssignments: QuestAssignment[],
     currentQuestNum: number
   ): any[] {
     const blocks: any[] = [];
@@ -309,7 +307,7 @@ export class MessageBlockBuilder {
 
     // Updated quest progress
     blocks.push({ type: 'divider' });
-    blocks.push(...this.createQuestProgressBlocks(progress, questOrder, false, questAssigns, minPlayers, currentQuestNum));
+    blocks.push(...this.createQuestProgressBlocks(progress, questOrder, false, questAssignments, currentQuestNum));
 
     // Score update
     let score = { good: 0, bad: 0 };
@@ -362,8 +360,7 @@ export class MessageBlockBuilder {
     players: Player[],
     progress: string[],
     questOrder: string[],
-    questAssigns: QuestAssignment[][],
-    minPlayers: number
+    questAssignments: QuestAssignment[]
   ): any[] {
     const resultBlocks: any[] = [];
     
@@ -402,7 +399,7 @@ export class MessageBlockBuilder {
     }
 
     resultBlocks.push({ type: 'divider' });
-    resultBlocks.push(...this.createQuestProgressBlocks(progress, questOrder, false, questAssigns, minPlayers));
+    resultBlocks.push(...this.createQuestProgressBlocks(progress, questOrder, false, questAssignments));
     resultBlocks.push({ type: 'divider' });
 
     // Role reveals
@@ -653,8 +650,7 @@ export class MessageBlockBuilder {
     playerIdsWhoHaveQuested: string[],
     questProgress: string[],
     questOrder: string[],
-    questAssigns: QuestAssignment[][],
-    minPlayers: number
+    questAssignments: QuestAssignment[]
   ): any[] {
     const M = require("./message-helpers");
     
@@ -671,7 +667,7 @@ export class MessageBlockBuilder {
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(questProgress, questOrder, true, questAssigns, minPlayers, questNumber),
+      ...MessageBlockBuilder.createQuestProgressBlocks(questProgress, questOrder, true, questAssignments, questNumber),
       {
         type: 'section',
         text: {
