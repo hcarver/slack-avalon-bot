@@ -33,7 +33,7 @@ export class RoleManager {
 
   static getRoleSpecificInfo(player: Player, allPlayers: Player[], evils: Player[], knownEvils: Player[]): string {
     if (player.role === "merlin") {
-      let evilButMordred = evils.filter((p) => p.role !== "mordred");
+      let evilButMordred = evils.filter((p) => p.isVisibleToMerlin());
       if (evilButMordred.length === evils.length) {
         return `You see all evil players:\n${M.pp(evils)}`;
       } else {
@@ -49,7 +49,7 @@ export class RoleManager {
       } else if (merlins.length > 1) {
         return `One of these is MERLIN, the other is MORGANA:\n${M.pp(merlins)}`;
       }
-    } else if (player.role !== "good" && player.role !== "oberon") {
+    } else if (player.isEvil() && player.isKnownToOtherEvils()) {
       if (knownEvils.length === evils.length) {
         return `Your evil teammates:\n${M.pp(knownEvils)}`;
       } else {

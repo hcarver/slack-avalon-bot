@@ -8,9 +8,44 @@ export type Role =
   | 'oberon'
   | 'assassin';
 
-export interface Player {
-  id: string;
-  role?: Role;
+export class Player {
+  constructor(
+    public readonly id: string,
+    public role?: Role
+  ) {}
+
+  isEvil(): boolean {
+    return this.role !== undefined && 
+           !['good', 'merlin', 'percival'].includes(this.role);
+  }
+
+  isGood(): boolean {
+    return !this.isEvil();
+  }
+
+  canFailQuests(): boolean {
+    return this.isEvil();
+  }
+
+  isKnownToOtherEvils(): boolean {
+    return this.isEvil() && this.role !== 'oberon';
+  }
+
+  isVisibleToMerlin(): boolean {
+    return this.isEvil() && this.role !== 'mordred';
+  }
+
+  hasRole(): boolean {
+    return this.role !== undefined;
+  }
+
+  static fromId(id: string): Player {
+    return new Player(id);
+  }
+
+  static fromIds(ids: string[]): Player[] {
+    return ids.map(id => Player.fromId(id));
+  }
 }
 
 export interface QuestAssignment {

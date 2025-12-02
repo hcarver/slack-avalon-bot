@@ -723,7 +723,7 @@ export class MessageBlockBuilder {
       ]
 
       // Only baddies can fail missions
-      if(!["good", "merlin", "percival"].includes(viewingPlayer.role)) {
+      if(viewingPlayer.canFailQuests()) {
         action_buttons.push(
           {
             type: "button",

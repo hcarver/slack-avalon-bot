@@ -162,7 +162,7 @@ export class Avalon {
   start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
 
-    const playerObjs = this.playerIds.map((id) => ({ id }));
+    const playerObjs = Player.fromIds(this.playerIds);
     let players = this.playerOrder(playerObjs);
     let assigns = this.getRoleAssigns(
       Avalon.getAssigns(players.length, this.config.specialRoles, this.config.resistance),
@@ -172,11 +172,7 @@ export class Avalon {
     for (let i = 0; i < players.length; i++) {
       let player = players[i];
       player.role = assigns[i];
-      if (
-        player.role != "good" &&
-        player.role != "merlin" &&
-        player.role != "percival"
-      ) {
+      if (player.isEvil()) {
         evils.push(player);
       }
     }
