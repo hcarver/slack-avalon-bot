@@ -10,6 +10,7 @@ import { QuestManager } from "./quest-manager";
 import { ActionCollector } from "./services/ActionCollector";
 import { TeamVotingService } from "./services/TeamVotingService";
 import { QuestExecutionService } from "./services/QuestExecutionService";
+import { GameMessenger } from "./services/GameMessenger";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -21,6 +22,7 @@ export class Avalon {
   api: webApi.WebClient;
   questManager!: QuestManager; // Initialized in start()
   bolt: any;
+  messenger!: GameMessenger; // Initialized in start()
 
   // Temporary storage until start() is called
   private channel: any;
@@ -159,7 +161,7 @@ export class Avalon {
     }
   }
 
-  start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
+  async start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
 
     const playerObjs = Player.fromIds(this.playerIds);
@@ -194,6 +196,9 @@ export class Avalon {
       Avalon.QUEST_ASSIGNS[this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS]
     );
 
+    // Initialize messenger with playerDms
+    this.messenger = new GameMessenger(this.api, playerDms);
+
     const presentRoles = players.map(p => p.role).filter((r): r is Role => r !== undefined);
 
     let specialRoles = Object.keys(Avalon.ROLES)
@@ -221,8 +226,11 @@ export class Avalon {
     ];
 
     let knownEvils = evils.filter((player) => player.role != "oberon");
-    for (let player of this.gameState.players) {
-      const roleBlocks = MessageBlockBuilder.createRoleInfoBlocks(
+    
+    // Send role information to all players
+    await this.messenger.broadcastToAll(
+      this.gameState.players,
+      (player) => MessageBlockBuilder.createRoleInfoBlocks(
         player,
         players,
         evils,
@@ -230,14 +238,9 @@ export class Avalon {
         this.gameState.assassin.id,
         this.gameState.getEvilCount(),
         this.gameState.getPlayerCount()
-      );
-
-      this.api.chat.postMessage({
-        channel: this.gameState.playerDms[player.id],
-        blocks: roleBlocks,
-        text: `You are ${Avalon.ROLES[player.role]}`
-      });
-    }
+      ),
+      (player) => `You are ${Avalon.ROLES[player.role!]}`
+    );
 
     (async () => {
       while (!this.gameState.isGameEnded()) {
@@ -277,13 +280,11 @@ export class Avalon {
   endGame(message: string, color: string, current: boolean): void {
     const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.gameState.players, this.questManager.getProgress(), Avalon.ORDER);
 
-    this.gameState.players.forEach(p => {
-      this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks: blocks,
-        text: message
-      });
-    });
+    this.messenger.broadcastSame(
+      this.gameState.players,
+      blocks,
+      message
+    );
 
     this.quit();
   }
@@ -334,13 +335,11 @@ export class Avalon {
       { type: 'divider' }
     ];
 
-    this.gameState.players.forEach(p => {
-      this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks: statusBlocks,
-        text: `${M.formatAtUser(player.id)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
-      });
-    });
+    await this.messenger.broadcastSame(
+      this.gameState.players,
+      statusBlocks,
+      `${M.formatAtUser(player.id)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
+    );
 
     const successful = await this.choosePlayersForQuest(player);
     if (successful) {
@@ -526,14 +525,12 @@ export class Avalon {
       }]
     });
 
-    // Send to all players and wait for all messages to be sent
-    await Promise.all(this.gameState.players.map(p => {
-      return this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks: blocks,
-        text: `${questName} Quest ${resultText}`
-      });
-    }));
+    // Send to all players
+    await this.messenger.broadcastSame(
+      this.gameState.players,
+      blocks,
+      `${questName} Quest ${resultText}`
+    );
   }
 
   async evaluateEndGame(score: GameScore): Promise<void> {
@@ -567,13 +564,11 @@ export class Avalon {
     // Broadcast assassination phase announcement
     const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.id);
 
-    this.gameState.players.forEach(p => {
-      this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks: announcementBlocks,
-        text: `${M.formatAtUser(assassin.id)} is the ASSASSIN. They can now try to kill MERLIN.`
-      });
-    });
+    await this.messenger.broadcastSame(
+      this.gameState.players,
+      announcementBlocks,
+      `${M.formatAtUser(assassin.id)} is the ASSASSIN. They can now try to kill MERLIN.`
+    );
 
     // Assassin's choice interface
     const assassinBlocks: any[] = [
@@ -617,13 +612,12 @@ export class Avalon {
       Avalon.ORDER,
       this.questManager.getAllQuestAssignments()
     );
-    this.gameState.players.forEach(p => {
-      this.api.chat.postMessage({
-        channel: this.gameState.playerDms[p.id],
-        blocks: resultBlocks,
-        text: accused.role === "merlin" ? "Evil wins! Assassin killed Merlin!" : "Good wins! Assassin missed!"
-      });
-    });
+    
+    await this.messenger.broadcastSame(
+      this.gameState.players,
+      resultBlocks,
+      accused.role === "merlin" ? "Evil wins! Assassin killed Merlin!" : "Good wins! Assassin missed!"
+    );
 
     this.quit();
   }
