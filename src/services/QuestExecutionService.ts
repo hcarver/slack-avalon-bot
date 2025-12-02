@@ -2,6 +2,7 @@ import { webApi } from "@slack/bolt";
 import { Player, QuestResult, QuestAssignment } from "../types";
 import { ActionCollector } from "./ActionCollector";
 import { MessageBlockBuilder } from "../message-block-builder";
+import { IActionListenerService } from "../interfaces";
 
 /**
  * Service for handling quest execution
@@ -9,7 +10,7 @@ import { MessageBlockBuilder } from "../message-block-builder";
 export class QuestExecutionService {
   constructor(
     private api: webApi.WebClient,
-    private bolt: any
+    private actionService: IActionListenerService
   ) {}
 
   /**
@@ -52,7 +53,7 @@ export class QuestExecutionService {
     const succeeded: Player[] = [];
 
     const questCollector = new ActionCollector<{ player: Player; fail: boolean }>(
-      this.bolt,
+      this.actionService,
       "quest-success-vote",
       questPlayers.map(p => p.id)
     );

@@ -1,4 +1,4 @@
-import { webApi } from "@slack/bolt";
+import { IMessageService } from "../interfaces";
 import { Player } from "../types";
 
 /**
@@ -7,7 +7,7 @@ import { Player } from "../types";
  */
 export class GameMessenger {
   constructor(
-    private api: webApi.WebClient,
+    private messageService: IMessageService,
     private playerDms: Record<string, string>
   ) {}
 
@@ -27,11 +27,11 @@ export class GameMessenger {
         const blocks = createBlocks(player);
         const text = createText ? createText(player) : "Game update";
         
-        await this.api.chat.postMessage({
-          channel: this.playerDms[player.id],
+        await this.messageService.postMessage(
+          this.playerDms[player.id],
           blocks,
           text
-        });
+        );
       })
     );
   }
@@ -49,11 +49,11 @@ export class GameMessenger {
   ): Promise<void> {
     await Promise.all(
       players.map(async (player) => {
-        await this.api.chat.postMessage({
-          channel: this.playerDms[player.id],
+        await this.messageService.postMessage(
+          this.playerDms[player.id],
           blocks,
           text
-        });
+        );
       })
     );
   }
@@ -69,11 +69,11 @@ export class GameMessenger {
     blocks: any[],
     text: string
   ): Promise<void> {
-    await this.api.chat.postMessage({
-      channel: this.playerDms[player.id],
+    await this.messageService.postMessage(
+      this.playerDms[player.id],
       blocks,
       text
-    });
+    );
   }
 
   /**
@@ -93,15 +93,13 @@ export class GameMessenger {
         const blocks = createBlocks(player);
         const text = createText ? createText(player) : "Game update";
         
-        const response = await this.api.chat.postMessage({
-          channel: this.playerDms[player.id],
+        const ts = await this.messageService.postMessage(
+          this.playerDms[player.id],
           blocks,
           text
-        });
+        );
         
-        if (response.ts) {
-          timestamps.set(player.id, response.ts);
-        }
+        timestamps.set(player.id, ts);
       })
     );
     
@@ -127,12 +125,12 @@ export class GameMessenger {
         const blocks = createBlocks(player);
         const text = createText ? createText(player) : "Game update";
         
-        this.api.chat.update({
-          channel: this.playerDms[player.id],
+        this.messageService.updateMessage(
+          this.playerDms[player.id],
           ts,
           blocks,
           text
-        });
+        );
       }
     });
   }

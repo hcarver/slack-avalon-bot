@@ -1,3 +1,5 @@
+import { IActionListenerService } from "../interfaces";
+
 /**
  * Generic service for collecting user actions via Slack button clicks
  */
@@ -8,7 +10,7 @@ export class ActionCollector<T> {
   private listenerId: string | null = null;
 
   constructor(
-    private bolt: any,
+    private actionService: IActionListenerService,
     private blockId: string,
     private playerIds: string[]
   ) {
@@ -30,7 +32,7 @@ export class ActionCollector<T> {
     handler: (userId: string, actionValue: string) => T | null,
     onUpdate?: () => void
   ): void {
-    this.listenerId = this.bolt.addActionListener(this.blockId, async (context) => {
+    this.listenerId = this.actionService.addActionListener(this.blockId, async (context) => {
       const userId = context.body.user.id;
       const action = context.body.actions[0];
       const actionValue = action.value;
@@ -106,7 +108,7 @@ export class ActionCollector<T> {
    */
   private cleanup(): void {
     if (this.listenerId) {
-      this.bolt.removeActionListener(this.listenerId);
+      this.actionService.removeActionListener(this.listenerId);
       this.listenerId = null;
     }
   }

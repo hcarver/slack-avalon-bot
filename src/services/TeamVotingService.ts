@@ -2,6 +2,7 @@ import { webApi } from "@slack/bolt";
 import { Player, TeamProposal } from "../types";
 import { ActionCollector } from "./ActionCollector";
 import { MessageBlockBuilder } from "../message-block-builder";
+import { IActionListenerService } from "../interfaces";
 
 /**
  * Service for handling team proposal voting
@@ -9,7 +10,7 @@ import { MessageBlockBuilder } from "../message-block-builder";
 export class TeamVotingService {
   constructor(
     private api: webApi.WebClient,
-    private bolt: any
+    private actionService: IActionListenerService
   ) {}
 
   /**
@@ -51,7 +52,7 @@ export class TeamVotingService {
       .filter(p => p !== undefined);
     
     const voteCollector = new ActionCollector<{ player: Player; approve: boolean }>(
-      this.bolt,
+      this.actionService,
       "quest-team-vote",
       uniquePlayers.map(p => p.id)
     );

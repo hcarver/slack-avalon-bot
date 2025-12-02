@@ -11,6 +11,9 @@ import { ActionCollector } from "./services/ActionCollector";
 import { TeamVotingService } from "./services/TeamVotingService";
 import { QuestExecutionService } from "./services/QuestExecutionService";
 import { GameMessenger } from "./services/GameMessenger";
+import { SlackMessageService } from "./infrastructure/SlackMessageService";
+import { SlackActionListenerService } from "./infrastructure/SlackActionListenerService";
+import { IMessageService, IActionListenerService } from "./interfaces";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -23,6 +26,10 @@ export class Avalon {
   questManager!: QuestManager; // Initialized in start()
   bolt: any;
   messenger!: GameMessenger; // Initialized in start()
+  
+  // Services
+  private messageService: IMessageService;
+  private actionService: IActionListenerService;
 
   // Temporary storage until start() is called
   private channel: any;
@@ -147,6 +154,10 @@ export class Avalon {
     this.channel = channel;
     this.playerIds = players;
     this.config = structuredClone(Avalon.DEFAULT_CONFIG);
+    
+    // Initialize services
+    this.messageService = new SlackMessageService(api);
+    this.actionService = new SlackActionListenerService(bolt);
   }
 
   configure(config: Partial<GameConfig>): void {
@@ -197,7 +208,7 @@ export class Avalon {
     );
 
     // Initialize messenger with playerDms
-    this.messenger = new GameMessenger(this.api, playerDms);
+    this.messenger = new GameMessenger(this.messageService, playerDms);
 
     const presentRoles = players.map(p => p.role).filter((r): r is Role => r !== undefined);
 
@@ -384,7 +395,7 @@ export class Avalon {
     }
 
     // Vote on the team
-    const teamVotingService = new TeamVotingService(this.api, this.bolt);
+    const teamVotingService = new TeamVotingService(this.api, this.actionService);
     return await teamVotingService.voteOnTeam(
       proposal,
       this.gameState.players,
@@ -427,7 +438,7 @@ export class Avalon {
 
 
   async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
-    const questExecutionService = new QuestExecutionService(this.api, this.bolt);
+    const questExecutionService = new QuestExecutionService(this.api, this.actionService);
     
     const { failed, succeeded } = await questExecutionService.executeQuest(
       questPlayers,
