@@ -14,6 +14,7 @@ import { GameMessenger } from "./services/GameMessenger";
 import { SlackMessageService } from "./infrastructure/SlackMessageService";
 import { SlackActionListenerService } from "./infrastructure/SlackActionListenerService";
 import { IMessageService, IActionListenerService } from "./interfaces";
+import { GameConfiguration } from "./domain/GameConfiguration";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -26,6 +27,7 @@ export class Avalon {
   questManager!: QuestManager; // Initialized in start()
   bolt: any;
   messenger!: GameMessenger; // Initialized in start()
+  gameConfig!: GameConfiguration; // Initialized in start()
   
   // Services
   private messageService: IMessageService;
@@ -127,7 +129,7 @@ export class Avalon {
 
   static getAssigns(numPlayers: number, specialRoles: Role[], resistance: boolean): Role[] {
     resistance = resistance || false;
-    let assigns: Role[] = Avalon.ROLE_ASSIGNS[numPlayers - Avalon.MIN_PLAYERS].slice(0);
+    let assigns: Role[] = Avalon.ROLE_ASSIGNS[numPlayers - GameConfiguration.MIN_PLAYERS].slice(0);
     if (!resistance) {
       specialRoles.forEach((role) => {
         switch (role) {
@@ -175,11 +177,17 @@ export class Avalon {
   async start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
 
+    // Create game configuration
+    this.gameConfig = new GameConfiguration(
+      this.playerIds.length,
+      this.config.specialRoles as Role[],
+      this.config.resistance,
+      this.config.order as 'turn' | 'random'
+    );
+
     const playerObjs = Player.fromIds(this.playerIds);
     let players = this.playerOrder(playerObjs);
-    let assigns = this.getRoleAssigns(
-      Avalon.getAssigns(players.length, this.config.specialRoles, this.config.resistance),
-    );
+    let assigns = this.getRoleAssigns(this.gameConfig.getRoleAssignments());
 
     let evils = [];
     for (let i = 0; i < players.length; i++) {
@@ -204,7 +212,7 @@ export class Avalon {
     );
 
     this.questManager = new QuestManager(
-      Avalon.QUEST_ASSIGNS[this.gameState.getPlayerCount() - Avalon.MIN_PLAYERS]
+      this.gameConfig.getQuestAssignments()
     );
 
     // Initialize messenger with playerDms
@@ -289,7 +297,7 @@ export class Avalon {
   }
 
   endGame(message: string, color: string, current: boolean): void {
-    const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.gameState.players, this.questManager.getProgress(), Avalon.ORDER);
+    const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.gameState.players, this.questManager.getProgress(), GameConfiguration.QUEST_NAMES);
 
     this.messenger.broadcastSame(
       this.gameState.players,
@@ -310,7 +318,7 @@ export class Avalon {
       f = "(2 fails required) ";
     }
     let message = ` ${questAssign.n} players ${f}to go on the ${
-      Avalon.ORDER[this.questManager.getCurrentQuestNumber()]
+      GameConfiguration.QUEST_NAMES[this.questManager.getCurrentQuestNumber()]
     } quest.`;
 
     let order = this.gameState.players.map((p) =>
@@ -324,11 +332,11 @@ export class Avalon {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: `${Avalon.ORDER[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + Avalon.ORDER[this.questManager.getCurrentQuestNumber()].slice(1)} Quest - Team Selection`,
+          text: `${GameConfiguration.QUEST_NAMES[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + GameConfiguration.QUEST_NAMES[this.questManager.getCurrentQuestNumber()].slice(1)} Quest - Team Selection`,
           emoji: true
         }
       },
-      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, true, this.questManager.getAllQuestAssignments(), this.questManager.getCurrentQuestNumber()),
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), GameConfiguration.QUEST_NAMES, true, this.questManager.getAllQuestAssignments(), this.questManager.getCurrentQuestNumber()),
       {
         type: 'section',
         text: {
@@ -400,33 +408,30 @@ export class Avalon {
       proposal,
       this.gameState.players,
       this.gameState.playerDms,
-      Avalon.ORDER
+      GameConfiguration.QUEST_NAMES
     );
   }
 
   getStatus(current: boolean): string {
+    const questAssignments = this.gameConfig.getQuestAssignments();
+    
     let status = this.questManager.getProgress().map((res, i) => {
-      let questAssign =
-        Avalon.QUEST_ASSIGNS[this.gameState.players.length - Avalon.MIN_PLAYERS][i];
+      let questAssign = questAssignments[i];
       let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
       return `${questAssign.n}${questAssign.f > 1 ? "*" : ""}${circle}`;
     });
+    
     if (current) {
-      let questAssign =
-        Avalon.QUEST_ASSIGNS[this.gameState.players.length - Avalon.MIN_PLAYERS][
-          this.questManager.getCurrentQuestNumber()
-        ];
+      let questAssign = questAssignments[this.questManager.getCurrentQuestNumber()];
       status.push(
         `${questAssign.n}${questAssign.f > 1 ? "*" : ""}:black_circle:`,
       );
     }
-    if (status.length < Avalon.ORDER.length) {
+    
+    if (status.length < GameConfiguration.QUEST_NAMES.length) {
       status = status.concat(
-        _.times(Avalon.ORDER.length - status.length, (i) => {
-          let questAssign =
-            Avalon.QUEST_ASSIGNS[this.gameState.players.length - Avalon.MIN_PLAYERS][
-              i + status.length
-            ];
+        _.times(GameConfiguration.QUEST_NAMES.length - status.length, (i) => {
+          let questAssign = questAssignments[i + status.length];
           return `${questAssign.n}${
             questAssign.f > 1 ? "*" : ""
           }:white_circle:`;
@@ -447,7 +452,7 @@ export class Avalon {
       this.questManager.getCurrentQuestNumber(),
       this.questManager.getProgress(),
       this.gameState.playerDms,
-      Avalon.ORDER,
+      GameConfiguration.QUEST_NAMES,
       this.questManager.getAllQuestAssignments()
     );
 
@@ -476,7 +481,7 @@ export class Avalon {
     const blocks: any[] = [];
 
     // Header
-    const questName = Avalon.ORDER[questNumber].charAt(0).toUpperCase() + Avalon.ORDER[questNumber].slice(1);
+    const questName = GameConfiguration.QUEST_NAMES[questNumber].charAt(0).toUpperCase() + GameConfiguration.QUEST_NAMES[questNumber].slice(1);
     const resultEmoji = result === "success" ? "✅" : "❌";
     const resultText = result === "success" ? "SUCCESS" : "FAILED";
 
@@ -520,7 +525,7 @@ export class Avalon {
 
     // Updated quest progress
     blocks.push({ type: 'divider' });
-    blocks.push(...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), Avalon.ORDER, false));
+    blocks.push(...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), GameConfiguration.QUEST_NAMES, false));
 
     // Score update
     let score = { good: 0, bad: 0 };
@@ -620,7 +625,7 @@ export class Avalon {
       accused.role === "merlin",
       this.gameState.players,
       this.questManager.getProgress(),
-      Avalon.ORDER,
+      GameConfiguration.QUEST_NAMES,
       this.questManager.getAllQuestAssignments()
     );
     
