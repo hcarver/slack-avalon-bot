@@ -16,6 +16,7 @@ import { SlackActionListenerService } from "./infrastructure/SlackActionListener
 import { IMessageService, IActionListenerService } from "./interfaces";
 import { GameConfiguration } from "./domain/GameConfiguration";
 import { GamePhase } from "./domain/GamePhaseManager";
+import { GameConstants } from "./constants/GameConstants";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -47,18 +48,6 @@ export class Avalon {
     resistance: false,
     order: "turn",
     specialRoles: ["merlin"],
-  };
-
-  static ROLES = {
-    bad: ":red_circle: Minion of Mordred",
-    good: ":large_blue_circle: Loyal Servant of Arthur",
-    assassin: ":crossed_swords: THE ASSASSIN :red_circle: Minion of Mordred",
-    oberon: ":alien: OBERON :red_circle: Minion of Mordred: Unknown to the other Minions of Mordred",
-    morgana:
-      ":japanese_ogre: MORGANA :red_circle: Minion of Mordred. You pose as MERLIN",
-    mordred: ":smiling_imp: MORDRED :red_circle: Unknown to MERLIN",
-    percival: ":cop: PERCIVAL :large_blue_circle: Loyal Servant of Arthur",
-    merlin: ":angel: MERLIN :large_blue_circle: Loyal Servant of Arthur",
   };
 
   static ROLE_ASSIGNS: Role[][] = [
@@ -221,23 +210,9 @@ export class Avalon {
 
     const presentRoles = players.map(p => p.role).filter((r): r is Role => r !== undefined);
 
-    let specialRoles = Object.keys(Avalon.ROLES)
-    .filter((role): role is Role => presentRoles.indexOf(role as Role) >= 0)
-    .map((role) => {
-      switch (role) {
-        case "merlin":
-          return ":angel: MERLIN";
-        case "percival":
-          return ":cop: PERCIVAL";
-        case "morgana":
-          return ":japanese_ogre: MORGANA";
-        case "mordred":
-          return ":smiling_imp: MORDRED";
-        case "oberon":
-          return ":alien: OBERON";
-      }
-    })
-    .filter((role) => !!role)
+    let specialRoles = presentRoles
+    .filter((role): role is Role => ['merlin', 'percival', 'morgana', 'mordred', 'oberon'].includes(role))
+    .map((role) => GameConstants.getRoleShortName(role).toUpperCase())
     .join(", ");
 
     const all_player_blocks = [
@@ -262,7 +237,7 @@ export class Avalon {
         this.gameState.getEvilCount(),
         this.gameState.getPlayerCount()
       ),
-      (player) => `You are ${Avalon.ROLES[player.role!]}`
+      (player) => `You are ${GameConstants.getRoleName(player.role!)}`
     );
 
     // Transition to team selection phase
@@ -575,21 +550,21 @@ export class Avalon {
   }
 
   async evaluateEndGame(score: GameScore): Promise<void> {
-    if (score.bad == 3) {
+    if (score.bad == GameConstants.LIMITS.questsToWin) {
       this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
       this.endGame(
-        `:red_circle: Minions of Mordred win by failing 3 quests!`,
-        "#e00",
+        GameConstants.WIN_MESSAGES.evilQuestWin,
+        GameConstants.COLORS.evil,
         false
       );
       return;
-    } else if (score.good == 3) {
+    } else if (score.good == GameConstants.LIMITS.questsToWin) {
       let merlinArray = this.gameState.players.filter((player) => player.role == "merlin");
       if (!merlinArray.length) {
         this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
         this.endGame(
-          `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
-          "#08e",
+          GameConstants.WIN_MESSAGES.goodQuestWin,
+          GameConstants.COLORS.good,
           false
         );
         return;
@@ -605,7 +580,7 @@ export class Avalon {
   }
 
   async assassinMerlinKill(assassin: Player, merlin: Player, killablePlayers: Player[]): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, GameConstants.TIMING.beforeAssassination));
 
     // Broadcast assassination phase announcement
     const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.id);
@@ -662,10 +637,14 @@ export class Avalon {
     // Transition to game ended
     this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
     
+    const winMessage = accused.role === "merlin" 
+      ? GameConstants.WIN_MESSAGES.evilAssassinWin 
+      : GameConstants.WIN_MESSAGES.goodAssassinWin;
+    
     await this.messenger.broadcastSame(
       this.gameState.players,
       resultBlocks,
-      accused.role === "merlin" ? "Evil wins! Assassin killed Merlin!" : "Good wins! Assassin missed!"
+      winMessage
     );
 
     this.quit();
