@@ -1,4 +1,5 @@
 import { Player, Role } from "../types";
+import { GamePhaseManager, GamePhase } from "./GamePhaseManager";
 
 export class GameState {
   readonly players: Player[];
@@ -15,7 +16,7 @@ export class GameState {
   currentLeaderIndex: number;
   questPlayers: Player[];
   isRunning: boolean;
-  private _gameEnded: boolean;
+  private phaseManager: GamePhaseManager;
 
   constructor(
     players: Player[],
@@ -39,7 +40,7 @@ export class GameState {
     this.currentLeaderIndex = 0;
     this.questPlayers = [];
     this.isRunning = true;
-    this._gameEnded = false;
+    this.phaseManager = new GamePhaseManager();
   }
 
   getCurrentLeader(): Player {
@@ -63,11 +64,11 @@ export class GameState {
   }
 
   isGameEnded(): boolean {
-    return this._gameEnded;
+    return this.phaseManager.hasEnded();
   }
 
   endGame(): void {
-    this._gameEnded = true;
+    this.phaseManager.forceEnd();
     this.isRunning = false;
   }
 
@@ -82,4 +83,22 @@ export class GameState {
   getGoodCount(): number {
     return this.players.length - this.evils.length;
   }
+
+  // Phase management methods
+  getCurrentPhase(): GamePhase {
+    return this.phaseManager.getCurrentPhase();
+  }
+
+  transitionToPhase(phase: GamePhase): void {
+    this.phaseManager.transitionTo(phase);
+  }
+
+  isInPhase(phase: GamePhase): boolean {
+    return this.phaseManager.isInPhase(phase);
+  }
+
+  canTransitionTo(phase: GamePhase): boolean {
+    return this.phaseManager.canTransitionTo(phase);
+  }
 }
+

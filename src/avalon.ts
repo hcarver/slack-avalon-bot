@@ -15,6 +15,7 @@ import { SlackMessageService } from "./infrastructure/SlackMessageService";
 import { SlackActionListenerService } from "./infrastructure/SlackActionListenerService";
 import { IMessageService, IActionListenerService } from "./interfaces";
 import { GameConfiguration } from "./domain/GameConfiguration";
+import { GamePhase } from "./domain/GamePhaseManager";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
 
 const M = require("./message-helpers");
@@ -246,6 +247,9 @@ export class Avalon {
 
     let knownEvils = evils.filter((player) => player.role != "oberon");
     
+    // Transition to role assignment phase
+    this.gameState.transitionToPhase(GamePhase.ROLE_ASSIGNMENT);
+    
     // Send role information to all players
     await this.messenger.broadcastToAll(
       this.gameState.players,
@@ -260,6 +264,9 @@ export class Avalon {
       ),
       (player) => `You are ${Avalon.ROLES[player.role!]}`
     );
+
+    // Transition to team selection phase
+    this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
 
     (async () => {
       while (!this.gameState.isGameEnded()) {
@@ -363,10 +370,25 @@ export class Avalon {
     const successful = await this.choosePlayersForQuest(player);
     if (successful) {
       this.gameState.resetRejectCount();
+      // Transition to quest execution
+      this.gameState.transitionToPhase(GamePhase.QUEST_EXECUTION);
       await new Promise(resolve => setTimeout(resolve, timeToPause));
-      return await this.runQuest(this.gameState.questPlayers, player);
+      const result = await this.runQuest(this.gameState.questPlayers, player);
+      // Transition back to team selection for next round
+      if (!this.gameState.isGameEnded()) {
+        this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
+      }
+      return result;
     }
     this.gameState.incrementRejectCount();
+    
+    // Check for 5 rejections (auto-fail)
+    if (this.gameState.rejectCount >= 5) {
+      this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
+    } else {
+      // Stay in team selection phase
+      this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
+    }
 
     return true;
   }
@@ -396,6 +418,9 @@ export class Avalon {
     );
 
     this.gameState.setQuestPlayers(questPlayers);
+
+    // Transition to team voting phase
+    this.gameState.transitionToPhase(GamePhase.TEAM_VOTING);
 
     // Auto-accept teams on the 5th attempt
     if(proposal.isLastAttempt()) {
@@ -551,6 +576,7 @@ export class Avalon {
 
   async evaluateEndGame(score: GameScore): Promise<void> {
     if (score.bad == 3) {
+      this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
       this.endGame(
         `:red_circle: Minions of Mordred win by failing 3 quests!`,
         "#e00",
@@ -560,6 +586,7 @@ export class Avalon {
     } else if (score.good == 3) {
       let merlinArray = this.gameState.players.filter((player) => player.role == "merlin");
       if (!merlinArray.length) {
+        this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
         this.endGame(
           `:large_blue_circle: Loyal Servants of Arthur win by succeeding 3 quests!`,
           "#08e",
@@ -570,6 +597,9 @@ export class Avalon {
       let assassin = this.gameState.assassin;
       let merlin = merlinArray[0];
       const killablePlayers = this.gameState.players.filter((p) => p.role && RoleManager.isGoodPlayer(p.role));
+      
+      // Transition to assassination phase
+      this.gameState.transitionToPhase(GamePhase.ASSASSINATION);
       await this.assassinMerlinKill(assassin, merlin, killablePlayers);
     }
   }
@@ -628,6 +658,9 @@ export class Avalon {
       GameConfiguration.QUEST_NAMES,
       this.questManager.getAllQuestAssignments()
     );
+    
+    // Transition to game ended
+    this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
     
     await this.messenger.broadcastSame(
       this.gameState.players,
