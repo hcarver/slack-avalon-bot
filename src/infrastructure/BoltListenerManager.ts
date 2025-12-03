@@ -22,6 +22,8 @@ export class BoltListenerManager {
     });
     // Register a single action handler that dispatches to all listeners
     this.bolt.action(/.*/, async (context) => {
+      await context.ack();
+      
       if (
         "actions" in context.body &&
         Array.isArray((context.body as any).actions) &&

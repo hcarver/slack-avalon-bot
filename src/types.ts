@@ -1,3 +1,7 @@
+import { UserId } from './slack-api-rx';
+
+export type PlayerId = string & { readonly __brand: 'PlayerId' };
+
 export type Role = 
   | 'good'
   | 'bad'
@@ -10,7 +14,8 @@ export type Role =
 
 export class Player {
   constructor(
-    public readonly id: string,
+    public readonly playerId: PlayerId,  // Unique game identifier (generated)
+    public readonly userId: UserId,      // Slack user ID
     public role?: Role
   ) {}
 
@@ -39,12 +44,34 @@ export class Player {
     return this.role !== undefined;
   }
 
-  static fromId(id: string): Player {
-    return new Player(id);
+  /**
+   * Create a player from a user ID
+   * Generates a unique player ID for this game instance
+   */
+  static fromUserId(userId: UserId): Player {
+    const playerId = `player_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}` as PlayerId;
+    return new Player(playerId, userId);
   }
 
+  /**
+   * Create multiple players from user IDs
+   */
+  static fromUserIds(userIds: UserId[]): Player[] {
+    return userIds.map(userId => Player.fromUserId(userId));
+  }
+
+  /**
+   * @deprecated Use fromUserId instead
+   */
+  static fromId(id: string): Player {
+    return Player.fromUserId(id as UserId);
+  }
+
+  /**
+   * @deprecated Use fromUserIds instead
+   */
   static fromIds(ids: string[]): Player[] {
-    return ids.map(id => Player.fromId(id));
+    return Player.fromUserIds(ids as UserId[]);
   }
 }
 

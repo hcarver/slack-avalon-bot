@@ -19,9 +19,10 @@ export class GameUILayer {
     maximum,
     validators=[]
   ) {
-    const checkbox_id = `${(Math.random() + 1).toString(36)}`;
-    const submit_id = `${(Math.random() + 1).toString(36)}`;
-    let selected_options = []
+    try {
+      const checkbox_id = `${(Math.random() + 1).toString(36)}`;
+      const submit_id = `${(Math.random() + 1).toString(36)}`;
+      let selected_options = []
 
     this.app.action(
       { action_id: checkbox_id },
@@ -98,6 +99,8 @@ export class GameUILayer {
             ]
           }
         ]
+      }).catch(err => {
+        console.error('Error posting role selection message:', err);
       });
 
     });
@@ -105,5 +108,9 @@ export class GameUILayer {
     const result = await done;
 
     return result;
+    } catch (err) {
+      console.error('Error in pollForDecision:', err);
+      throw err;
+    }
   }
 }

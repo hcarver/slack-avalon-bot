@@ -19,11 +19,11 @@ export class TeamProposal {
   }
 
   getMemberIds(): string[] {
-    return this.members.map(m => m.id);
+    return this.members.map(m => m.playerId);
   }
 
   includesPlayer(playerId: string): boolean {
-    return this.members.some(m => m.id === playerId);
+    return this.members.some(m => m.playerId === playerId);
   }
 
   getTeamSize(): number {

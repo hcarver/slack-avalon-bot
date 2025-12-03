@@ -35,7 +35,7 @@ export class TeamVotingService {
         questOrder
       );
       const resp = await this.api.chat.postMessage({
-        channel: playerDms[p.id],
+        channel: playerDms[p.playerId],
         blocks,
         text: `Team vote for ${questOrder[proposal.questNumber]} quest`
       });
@@ -46,20 +46,16 @@ export class TeamVotingService {
     const approveVotes: Player[] = [];
     const rejectVotes: Player[] = [];
     
-    // Handle duplicate player IDs (for development mode)
-    const uniquePlayers: Player[] = [...new Set(allPlayers.map(p => p.id))]
-      .map(id => allPlayers.find(p => p.id === id)!)
-      .filter(p => p !== undefined);
-    
     const voteCollector = new ActionCollector<{ player: Player; approve: boolean }>(
       this.actionService,
       "quest-team-vote",
-      uniquePlayers.map(p => p.id)
+      allPlayers.map(p => p.playerId),
+      (playerId) => allPlayers.find(p => p.playerId === playerId)!.userId
     );
 
     voteCollector.start(
-      (userId, actionValue) => {
-        const player = uniquePlayers.find(p => p.id === userId);
+      (playerId, actionValue) => {
+        const player = allPlayers.find(p => p.playerId === playerId);
         if (!player) return null;
         
         const approve = actionValue === "approve";
@@ -68,8 +64,8 @@ export class TeamVotingService {
         
         return { player, approve };
       },
-      () => {
-        // Update UI after each vote
+      (channel, messageTs, playerId) => {
+        // Update all players' messages to show the new vote
         playerMessages.forEach(([p, ts]) => {
           const blocks = MessageBlockBuilder.createTeamVoteBlocks(
             proposal,
@@ -80,7 +76,7 @@ export class TeamVotingService {
             questOrder
           );
           this.api.chat.update({
-            channel: playerDms[p.id],
+            channel: playerDms[p.playerId],
             ts,
             blocks,
             text: `Team vote for ${questOrder[proposal.questNumber]} quest`
@@ -101,7 +97,7 @@ export class TeamVotingService {
         questOrder
       );
       this.api.chat.update({
-        channel: playerDms[p.id],
+        channel: playerDms[p.playerId],
         ts,
         blocks,
         text: `Team vote result for ${questOrder[proposal.questNumber]} quest`

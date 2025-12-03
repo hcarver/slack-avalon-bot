@@ -42,10 +42,10 @@ export class QuestExecutionService {
         questAssignments
       );
       const resp = await this.api.chat.postMessage({
-        channel: playerDms[p.id],
+        channel: playerDms[p.playerId],
         blocks
       });
-      playerMessages.set(p.id, resp.ts as string);
+      playerMessages.set(p.playerId, resp.ts as string);
     }));
 
     // 2. Collect quest votes from questing players
@@ -55,12 +55,13 @@ export class QuestExecutionService {
     const questCollector = new ActionCollector<{ player: Player; fail: boolean }>(
       this.actionService,
       "quest-success-vote",
-      questPlayers.map(p => p.id)
+      questPlayers.map(p => p.playerId),
+      (playerId) => questPlayers.find(p => p.playerId === playerId)!.userId
     );
 
     questCollector.start(
-      (userId, actionValue) => {
-        const player = questPlayers.find(p => p.id === userId);
+      (playerId, actionValue) => {
+        const player = questPlayers.find(p => p.playerId === playerId);
         if (!player) return null;
         
         const fail = actionValue === "fail";
@@ -69,8 +70,8 @@ export class QuestExecutionService {
         
         return { player, fail };
       },
-      () => {
-        // Update quest status for all players
+      (channel, messageTs, playerId) => {
+        // Update all players' messages to show the new vote
         allPlayers.forEach(p => {
           const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
             questPlayers,
@@ -84,9 +85,10 @@ export class QuestExecutionService {
             questAssignments
           );
           this.api.chat.update({
-            channel: playerDms[p.id],
-            ts: playerMessages.get(p.id)!,
-            blocks
+            channel: playerDms[p.playerId],
+            ts: playerMessages.get(p.playerId)!,
+            blocks,
+            text: `${questOrder[questNumber]} quest`
           });
         });
       }

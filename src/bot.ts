@@ -4,6 +4,8 @@ import { App } from "@slack/bolt";
 
 import { GameUILayer } from "./game-ui-layer";
 import { BoltListenerManager } from "./infrastructure/BoltListenerManager";
+import { UserId, DmChannelId } from "./slack-api-rx";
+import { GameConstants } from "./constants/GameConstants";
 
 const _ = require("lodash");
 const SlackApiRx = require("./slack-api-rx");
@@ -137,8 +139,8 @@ export class Bot {
       });
     }
 
-    let players = [];
-    const playerSet = new Set();
+    let players: UserId[] = [];
+    const playerSet = new Set<UserId>();
 
     const formatMessage = () => `Respond with *'yes'* to join the game.\n\n*Players joined (${players.length}/${Avalon.MAX_PLAYERS}):*\n${players.map(M.formatAtUser).join(", ") || "_None yet_"}\n\n${M.formatAtUser(gameStarter)} - type *'start'* when ready to begin (minimum ${Avalon.MIN_PLAYERS} players required).`
 
@@ -159,10 +161,10 @@ export class Bot {
       }
 
       // Check for new players joining
-      if (text.match(/\byes\b|dta/i) && !playerSet.has(event.user)) {
+      if (text.match(/\byes\b|dta/i) && !playerSet.has(event.user as UserId)) {
         if(playerSet.size < Avalon.MAX_PLAYERS) {
-          playerSet.add(event.user);
-          players.push(event.user);
+          playerSet.add(event.user as UserId);
+          players.push(event.user as UserId);
 
           // Update the message
           await this.api.chat.update({
@@ -238,12 +240,16 @@ export class Bot {
       return Promise.resolve();
     }
 
-    const configuringPlayer = players[Math.floor(Math.random() * players.length)];
+    const configuringPlayer: UserId = players[Math.floor(Math.random() * players.length)];
 
     this.bolt.client.chat.postMessage({
       text: `${M.formatAtUser(configuringPlayer)} will now choose the roles in play for this game.`,
       channel: channel.id,
     });
+
+    // Open DM for the configuring player
+    const configuringPlayerDmInfo = await SlackApiRx.openDm(this.api, configuringPlayer);
+    const configuringPlayerDm: DmChannelId = configuringPlayerDmInfo.dmChannelId;
 
     const configurableRoles = [
       "oberon",
@@ -272,16 +278,22 @@ export class Bot {
       }
     }
 
-    const roleChoice = gameUx.pollForDecision(
-      configuringPlayer,
-      `Choose the roles in the game`,
-      configurableRoles.map(role => Avalon.ROLES[role]),
-      "Choose",
-      (user_id) => user_id === configuringPlayer.id,
-      0,
-      configurableRoles.length,
-      [validateValidRoleChoice]
-    );
+    let roleChoice;
+    try {
+      roleChoice = gameUx.pollForDecision(
+        configuringPlayerDm as string,
+        `Choose the roles in the game`,
+        configurableRoles.map(role => GameConstants.ROLE_NAMES[role]),
+        "Choose",
+        (user_id) => user_id === (configuringPlayer as string),
+        0,
+        configurableRoles.length,
+        [validateValidRoleChoice]
+      );
+    } catch (err) {
+      console.error('Error calling pollForDecision:', err);
+      throw err;
+    }
 
     try {
       // Wait for role choice
@@ -290,7 +302,7 @@ export class Bot {
 
       // Post role selection message
       this.bolt.client.chat.postMessage({
-        text: `${M.formatAtUser(configuringPlayer)} chose:\n\n${role_names.map(name => `${Avalon.ROLES[name]}`).join("\n")}\n\nGame starting now!`,
+        text: `${M.formatAtUser(configuringPlayer)} chose:\n\n${role_names.map(name => `${GameConstants.ROLE_NAMES[name]}`).join("\n")}\n\nGame starting now!`,
         channel: channel.id,
       });
 

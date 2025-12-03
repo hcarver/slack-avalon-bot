@@ -18,6 +18,7 @@ import { GameConfiguration } from "./domain/GameConfiguration";
 import { GamePhase } from "./domain/GamePhaseManager";
 import { GameConstants } from "./constants/GameConstants";
 import { Player, QuestAssignment, GameConfig, GameScore, QuestResult, Role, TeamProposal, GameState } from "./types";
+import { UserId, DmChannelId } from "./slack-api-rx";
 
 const M = require("./message-helpers");
 require("string_score");
@@ -37,7 +38,7 @@ export class Avalon {
 
   // Temporary storage until start() is called
   private channel: any;
-  private playerIds: string[];
+  private playerIds: UserId[];
   private config: GameConfig; // Added for message listening
 
   static MIN_PLAYERS = 5;
@@ -139,7 +140,7 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(gameUx: GameUILayer, api: webApi.WebClient, bolt: any, channel: any, players: string[]) {
+  constructor(gameUx: GameUILayer, api: webApi.WebClient, bolt: any, channel: any, players: UserId[]) {
     this.api = api;
     this.gameUx = gameUx;
     this.bolt = bolt;
@@ -164,7 +165,7 @@ export class Avalon {
     }
   }
 
-  async start(playerDms: Record<string, string>, timeBetweenRounds?: number): Promise<void> {
+  async start(userDms: Record<string, DmChannelId>, timeBetweenRounds?: number): Promise<void> {
     timeBetweenRounds = timeBetweenRounds || 1000;
 
     // Create game configuration
@@ -175,9 +176,15 @@ export class Avalon {
       this.config.order as 'turn' | 'random'
     );
 
-    const playerObjs = Player.fromIds(this.playerIds);
+    const playerObjs = Player.fromUserIds(this.playerIds);
     let players = this.playerOrder(playerObjs);
     let assigns = this.getRoleAssigns(this.gameConfig.getRoleAssignments());
+
+    // Build playerDms mapping: playerId -> dmChannelId
+    const playerDms: Record<string, string> = {};
+    playerObjs.forEach(p => {
+      playerDms[p.playerId] = userDms[p.userId];
+    });
 
     let evils = [];
     for (let i = 0; i < players.length; i++) {
@@ -233,7 +240,7 @@ export class Avalon {
         players,
         evils,
         knownEvils,
-        this.gameState.assassin.id,
+        this.gameState.assassin.playerId,
         this.gameState.getEvilCount(),
         this.gameState.getPlayerCount()
       ),
@@ -304,9 +311,9 @@ export class Avalon {
     } quest.`;
 
     let order = this.gameState.players.map((p) =>
-      p.id == player.id
-        ? `*${M.formatAtUser(p.id)}*`
-        : M.formatAtUser(p.id),
+      p.playerId == player.playerId
+        ? `*${M.formatAtUser(p)}*`
+        : M.formatAtUser(p),
     );
 
     const statusBlocks = [
@@ -323,7 +330,7 @@ export class Avalon {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${M.formatAtUser(player.id)}* will choose${message}\n*Attempt:* ${this.gameState.rejectCount + 1}/5`
+          text: `*${M.formatAtUser(player)}* will choose${message}\n*Attempt:* ${this.gameState.rejectCount + 1}/5`
         }
       },
       {
@@ -339,7 +346,7 @@ export class Avalon {
     await this.messenger.broadcastSame(
       this.gameState.players,
       statusBlocks,
-      `${M.formatAtUser(player.id)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
+      `${M.formatAtUser(player)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
     );
 
     const successful = await this.choosePlayersForQuest(player);
@@ -373,11 +380,11 @@ export class Avalon {
 
     // Await the player's team choice
     const playerChoice = this.gameUx.pollForDecision(
-      this.gameState.playerDms[player.id],
+      this.gameState.playerDms[player.playerId],
       `Choose a team of ${questAssign.n}`,
       this.gameState.players.map((player) => M.formatAtUser(player)),
       "Nominate",
-      (user_id) => user_id === player.id,
+      (user_id) => user_id === player.userId,
       questAssign.n,
       questAssign.n,
     );
@@ -583,12 +590,12 @@ export class Avalon {
     await new Promise(resolve => setTimeout(resolve, GameConstants.TIMING.beforeAssassination));
 
     // Broadcast assassination phase announcement
-    const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.id);
+    const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.userId);
 
     await this.messenger.broadcastSame(
       this.gameState.players,
       announcementBlocks,
-      `${M.formatAtUser(assassin.id)} is the ASSASSIN. They can now try to kill MERLIN.`
+      `${M.formatAtUser(assassin)} is the ASSASSIN. They can now try to kill MERLIN.`
     );
 
     // Assassin's choice interface
@@ -611,11 +618,11 @@ export class Avalon {
     ];
 
     const playerChoice = this.gameUx.pollForDecision(
-      this.gameState.playerDms[assassin.id],
+      this.gameState.playerDms[assassin.playerId],
       `Choose who to assassinate`,
       killablePlayers.map((player) => M.formatAtUser(player)),
       "⚔️ Assassinate",
-      (user_id) => user_id === assassin.id,
+      (user_id) => user_id === assassin.userId,
       1,
       1,
     );
@@ -624,9 +631,9 @@ export class Avalon {
 
     // Result announcement
     const resultBlocks = MessageBlockBuilder.createAssassinationResultBlocks(
-      assassin.id,
-      accused.id,
-      merlin.id,
+      assassin.userId,
+      accused.userId,
+      merlin.userId,
       accused.role === "merlin",
       this.gameState.players,
       this.questManager.getProgress(),

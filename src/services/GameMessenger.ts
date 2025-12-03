@@ -28,7 +28,7 @@ export class GameMessenger {
         const text = createText ? createText(player) : "Game update";
         
         await this.messageService.postMessage(
-          this.playerDms[player.id],
+          this.playerDms[player.playerId],
           blocks,
           text
         );
@@ -50,7 +50,7 @@ export class GameMessenger {
     await Promise.all(
       players.map(async (player) => {
         await this.messageService.postMessage(
-          this.playerDms[player.id],
+          this.playerDms[player.playerId],
           blocks,
           text
         );
@@ -70,7 +70,7 @@ export class GameMessenger {
     text: string
   ): Promise<void> {
     await this.messageService.postMessage(
-      this.playerDms[player.id],
+      this.playerDms[player.playerId],
       blocks,
       text
     );
@@ -94,12 +94,12 @@ export class GameMessenger {
         const text = createText ? createText(player) : "Game update";
         
         const ts = await this.messageService.postMessage(
-          this.playerDms[player.id],
+          this.playerDms[player.playerId],
           blocks,
           text
         );
         
-        timestamps.set(player.id, ts);
+        timestamps.set(player.playerId, ts);
       })
     );
     
@@ -120,13 +120,13 @@ export class GameMessenger {
     createText?: (player: Player) => string
   ): Promise<void> {
     players.forEach((player) => {
-      const ts = timestamps.get(player.id);
+      const ts = timestamps.get(player.playerId);
       if (ts) {
         const blocks = createBlocks(player);
         const text = createText ? createText(player) : "Game update";
         
         this.messageService.updateMessage(
-          this.playerDms[player.id],
+          this.playerDms[player.playerId],
           ts,
           blocks,
           text

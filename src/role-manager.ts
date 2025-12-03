@@ -45,7 +45,7 @@ export class RoleManager {
       );
 
       if (merlins.length === 1) {
-        return `${M.formatAtUser(merlins[0].id)} is MERLIN`;
+        return `${M.formatAtUser(merlins[0])} is MERLIN`;
       } else if (merlins.length > 1) {
         return `One of these is MERLIN, the other is MORGANA:\n${M.pp(merlins)}`;
       }

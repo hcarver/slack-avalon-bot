@@ -12,7 +12,7 @@ export class MessageBlockBuilder {
     allPlayers: Player[],
     evils: Player[],
     knownEvils: Player[],
-    assassinId: string,
+    assassinPlayerId: string,
     totalEvils: number,
     totalPlayers: number
   ): any[] {
@@ -54,7 +54,7 @@ export class MessageBlockBuilder {
     });
 
     // Assassin notification
-    if (assassinId === player.id && player.role !== "assassin") {
+    if (assassinPlayerId === player.playerId && player.role !== "assassin") {
       blocks.push({
         type: 'section',
         text: {
@@ -157,7 +157,7 @@ export class MessageBlockBuilder {
     for (let player of players) {
       const roleEmoji = RoleManager.getRoleEmoji(player.role!);
       const roleName = RoleManager.getRoleName(player.role!);
-      const playerInfo = `${roleEmoji} ${M.formatAtUser(player.id)} - *${roleName}*`;
+      const playerInfo = `${roleEmoji} ${M.formatAtUser(player)} - *${roleName}*`;
       
       if (RoleManager.isGoodPlayer(player.role!)) {
         goodPlayers.push(playerInfo);
@@ -417,7 +417,7 @@ export class MessageBlockBuilder {
     for (let player of players) {
       const roleEmoji = RoleManager.getRoleEmoji(player.role!);
       const roleName = RoleManager.getRoleName(player.role!);
-      const playerInfo = `${roleEmoji} ${M.formatAtUser(player.id)} - *${roleName}*`;
+      const playerInfo = `${roleEmoji} ${M.formatAtUser(player)} - *${roleName}*`;
       
       if (RoleManager.isGoodPlayer(player.role!)) {
         goodPlayers.push(playerInfo);
@@ -463,18 +463,18 @@ export class MessageBlockBuilder {
     questOrder: string[]
   ): any[] {
     const M = require("./message-helpers");
-    const teamNomination = `${M.formatAtUser(proposal.leader.id)} nominated ${M.pp(
+    const teamNomination = `${M.formatAtUser(proposal.leader.userId)} nominated ${M.pp(
       proposal.members,
     )} for the ${questOrder[proposal.questNumber]} quest`;
 
     // Build player status list with icons
     const playerStatusList = allPlayers.map(p => {
-      if (approvingPlayers.some(ap => ap.id === p.id)) {
-        return `✅ ${M.formatAtUser(p.id)}`;
-      } else if (rejectingPlayers.some(rp => rp.id === p.id)) {
-        return `❌ ${M.formatAtUser(p.id)}`;
+      if (approvingPlayers.some(ap => ap.playerId === p.playerId)) {
+        return `✅ ${M.formatAtUser(p)}`;
+      } else if (rejectingPlayers.some(rp => rp.playerId === p.playerId)) {
+        return `❌ ${M.formatAtUser(p)}`;
       } else {
-        return `⬜ ${M.formatAtUser(p.id)}`;
+        return `⬜ ${M.formatAtUser(p)}`;
       }
     }).join('\n');
 
@@ -525,7 +525,7 @@ export class MessageBlockBuilder {
     questOrder: string[]
   ): any[] {
     const M = require("./message-helpers");
-    const teamNomination = `${M.formatAtUser(proposal.leader.id)} is nominating ${M.pp(
+    const teamNomination = `${M.formatAtUser(proposal.leader.userId)} is nominating ${M.pp(
       proposal.members,
     )} for the ${questOrder[proposal.questNumber]} quest`;
 
@@ -541,23 +541,23 @@ export class MessageBlockBuilder {
     if (allVotesIn) {
       // Show actual votes only after all votes are in
       playerStatusList = allPlayers.map(p => {
-        if (approvingPlayers.some(ap => ap.id === p.id)) {
-          return `✅ ${M.formatAtUser(p.id)}`;
-        } else if (rejectingPlayers.some(rp => rp.id === p.id)) {
-          return `❌ ${M.formatAtUser(p.id)}`;
+        if (approvingPlayers.some(ap => ap.playerId === p.playerId)) {
+          return `✅ ${M.formatAtUser(p)}`;
+        } else if (rejectingPlayers.some(rp => rp.playerId === p.playerId)) {
+          return `❌ ${M.formatAtUser(p)}`;
         } else {
-          return `⬜ ${M.formatAtUser(p.id)}`;
+          return `⬜ ${M.formatAtUser(p)}`;
         }
       }).join('\n');
     } else {
       // Before all votes are in, only show who has voted (not how they voted)
       playerStatusList = allPlayers.map(p => {
-        const hasVoted = approvingPlayers.some(ap => ap.id === p.id) ||
-                        rejectingPlayers.some(rp => rp.id === p.id);
+        const hasVoted = approvingPlayers.some(ap => ap.playerId === p.playerId) ||
+                        rejectingPlayers.some(rp => rp.playerId === p.playerId);
         if (hasVoted) {
-          return `🗳️ ${M.formatAtUser(p.id)}`;
+          return `🗳️ ${M.formatAtUser(p)}`;
         } else {
-          return `⏳ ${M.formatAtUser(p.id)}`;
+          return `⏳ ${M.formatAtUser(p)}`;
         }
       }).join('\n');
     }
@@ -574,8 +574,8 @@ export class MessageBlockBuilder {
       statusText = `🗳️ *Voting in Progress*\n${progressBar} ${votedCount}/${totalVotes} votes received`;
     }
 
-    const hasVoted = approvingPlayers.some(ap => ap.id === viewingPlayer.id) ||
-                     rejectingPlayers.some(rp => rp.id === viewingPlayer.id);
+    const hasVoted = approvingPlayers.some(ap => ap.playerId === viewingPlayer.playerId) ||
+                     rejectingPlayers.some(rp => rp.playerId === viewingPlayer.playerId);
 
     const blocks: any[] = [
       {
@@ -655,7 +655,7 @@ export class MessageBlockBuilder {
     const M = require("./message-helpers");
     
     let order = allPlayers.map((p) =>
-      p.id == leader.id ? `*${M.formatAtUser(p.id)}*` : M.formatAtUser(p.id),
+      p.playerId == leader.playerId ? `*${M.formatAtUser(p)}*` : M.formatAtUser(p),
     );
 
     const header_blocks = [
@@ -687,7 +687,7 @@ export class MessageBlockBuilder {
 
     const summary_blocks = []
     if(questPlayers.length > playerIdsWhoHaveQuested.length) {
-      const still_waiting_on = `*Waiting for:* ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.id)))}`
+      const still_waiting_on = `*Waiting for:* ${M.pp(questPlayers.filter(x => !playerIdsWhoHaveQuested.includes(x.playerId)))}`
 
       summary_blocks.push({
         type: "section",
@@ -707,7 +707,7 @@ export class MessageBlockBuilder {
     }
 
     const action_blocks = []
-    if(questPlayers.map(x => x.id).includes(viewingPlayer.id) && !playerIdsWhoHaveQuested.includes(viewingPlayer.id)) {
+    if(questPlayers.map(x => x.playerId).includes(viewingPlayer.playerId) && !playerIdsWhoHaveQuested.includes(viewingPlayer.playerId)) {
 
       const action_buttons = [
         {
