@@ -11,6 +11,7 @@ import { ActionCollector } from "./services/ActionCollector";
 import { TeamVotingService } from "./services/TeamVotingService";
 import { QuestExecutionService } from "./services/QuestExecutionService";
 import { GameMessenger } from "./services/GameMessenger";
+import { RoleService } from "./services/RoleService";
 import { SlackMessageService } from "./infrastructure/SlackMessageService";
 import { SlackActionListenerService } from "./infrastructure/SlackActionListenerService";
 import { IMessageService, IActionListenerService } from "./interfaces";
@@ -178,7 +179,6 @@ export class Avalon {
 
     const playerObjs = Player.fromUserIds(this.playerIds);
     let players = this.playerOrder(playerObjs);
-    let assigns = this.getRoleAssigns(this.gameConfig.getRoleAssignments());
 
     // Build playerDms mapping: playerId -> dmChannelId
     const playerDms: Record<string, string> = {};
@@ -186,16 +186,9 @@ export class Avalon {
       playerDms[p.playerId] = userDms[p.userId];
     });
 
-    let evils = [];
-    for (let i = 0; i < players.length; i++) {
-      let player = players[i];
-      player.role = assigns[i];
-      if (player.isEvil()) {
-        evils.push(player);
-      }
-    }
-
-    const assassin = this.config.resistance ? evils[0] : this.getAssassin(evils);
+    // Use RoleService to assign roles
+    const roleService = new RoleService(this.gameConfig);
+    const { evils, assassin } = roleService.assignRoles(players);
 
     // Create GameState once with all proper values
     this.gameState = new GameState(
@@ -258,21 +251,8 @@ export class Avalon {
     return Promise.resolve();
   }
 
-  getRoleAssigns(roles: Role[]): Role[] {
-    return _.shuffle(roles);
-  }
-
   playerOrder(players: Player[]): Player[] {
     return _.shuffle(players);
-  }
-
-  getAssassin(evils: Player[]): Player {
-    let assassinArray = evils.filter((player) => player.role == "assassin");
-    if (assassinArray.length) {
-      return assassinArray[0];
-    } else {
-      return _.shuffle(evils)[0];
-    }
   }
 
   quit() {
