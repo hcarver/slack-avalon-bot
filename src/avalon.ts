@@ -221,10 +221,10 @@ export class Avalon {
     ];
 
     let knownEvils = evils.filter((player) => player.role != "oberon");
-    
+
     // Transition to role assignment phase
     this.gameState.transitionToPhase(GamePhase.ROLE_ASSIGNMENT);
-    
+
     // Send role information to all players
     await this.messenger.broadcastToAll(
       this.gameState.players,
@@ -243,6 +243,9 @@ export class Avalon {
     // Transition to team selection phase
     this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
 
+    // Set up history command handler
+    this.setupHistoryCommandHandler();
+
     (async () => {
       while (!this.gameState.isGameEnded()) {
         await this.playRound();
@@ -257,6 +260,110 @@ export class Avalon {
 
   quit() {
     this.gameState.endGame();
+  }
+
+  private setupHistoryCommandHandler(): void {
+    this.bolt.addMessageListener(async ({event}) => {
+      // Only process plain messages
+      if (event.subtype !== undefined) return;
+
+      // Check if it's a DM
+      const result = await this.api.conversations.info({ channel: event.channel });
+      const channel = result.channel;
+      if (!channel.is_im) return;
+
+      // Check if message contains "history"
+      if (!event.text || !event.text.toLowerCase().match(/\bhistory\b/i)) return;
+
+      // Check if the game is still running
+      if (!this.gameState || !this.gameState.isRunning) return;
+
+      // Find the player
+      const userId = event.user;
+      const player = this.gameState.players.find(p => p.userId === userId);
+
+      if (!player) return;
+
+      // Format and send the history
+      const historyText = this.formatGameHistory();
+      await this.api.chat.postMessage({
+        text: historyText,
+        channel: event.channel,
+      });
+    });
+  }
+
+  private formatGameHistory(): string {
+    const proposalHistory = this.gameState.getProposalHistory();
+    const questProgress = this.questManager.getProgress();
+    const questNames = GameConfiguration.QUEST_NAMES;
+
+    let history = "*Game History*\n\n";
+
+    // Create player name header - using numbered columns for clarity
+    const playerCount = this.gameState.players.length;
+    const playerNumbers = this.gameState.players.map((_, idx) => `P${idx + 1}`);
+
+    history += "```\n";
+    history += "Quest Att  Leader → Team\n";
+    history += "─".repeat(43 + playerCount * 4) + "\n";
+
+    // Group proposals by quest
+    const proposalsByQuest = new Map<number, typeof proposalHistory>();
+    proposalHistory.forEach(entry => {
+      if (!proposalsByQuest.has(entry.questNumber)) {
+        proposalsByQuest.set(entry.questNumber, []);
+      }
+      proposalsByQuest.get(entry.questNumber)!.push(entry);
+    });
+
+    // Display history quest by quest
+    for (let questNum = 0; questNum < Math.max(questProgress.length, proposalsByQuest.size); questNum++) {
+      const questName = questNames[questNum].substring(0, 6).padEnd(6);
+
+      // Show team proposals for this quest
+      const proposals = proposalsByQuest.get(questNum) || [];
+      proposals.forEach((entry, idx) => {
+        // Format leader and team names
+        const leaderName = M.formatAtUser(entry.leader);
+        const teamNames = entry.members.map(p => M.formatAtUser(p));
+        const teamDisplay = (leaderName + " → " + teamNames.join(", "));
+
+        // Create vote columns - each player gets their vote shown
+        const votes = this.gameState.players.map(p => {
+          if (entry.approveVotes.some(ap => ap.playerId === p.playerId)) {
+            return M.formatAtUser(p) + " ✅";
+          } else if (entry.rejectVotes.some(rp => rp.playerId === p.playerId)) {
+            return M.formatAtUser(p) + " ❌";
+          }
+          return " ";
+        }).join(" ");
+
+        const status = entry.approved ? "✅ Accepted" : "❌ Rejected";
+        const questCol = idx === 0 ? questName : "      ";
+
+        const rowHeader = `${questCol}  ${entry.attemptNumber}`
+        history += `${rowHeader}   ${teamDisplay}\n`
+        history += `${" ".repeat(rowHeader.length)}   ${votes}\n`
+        history += `${" ".repeat(rowHeader.length)}   ${status}\n`;
+      });
+
+      // Show quest result if available
+      if (questNum < questProgress.length) {
+        const result = questProgress[questNum];
+        const resultIcon = result === "good" ? "🔵" : "🔴";
+        const resultText = result === "good" ? "PASS" : "FAIL";
+        history += " ".repeat(8) + "  " + resultIcon + " " + resultText + "\n";
+      }
+
+      if (questNum < Math.max(questProgress.length, proposalsByQuest.size) - 1) {
+        history += "─".repeat(43 + playerCount * 4) + "\n";
+      }
+    }
+
+    history += "```\n\n";
+
+    return history;
   }
 
   async playRound() {
@@ -343,7 +450,7 @@ export class Avalon {
       return result;
     }
     this.gameState.incrementRejectCount();
-    
+
     // Check for 5 rejections (auto-fail)
     if (this.gameState.rejectCount >= 5) {
       this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
@@ -424,20 +531,20 @@ export class Avalon {
 
   getStatus(current: boolean): string {
     const questAssignments = this.gameConfig.getQuestAssignments();
-    
+
     let status = this.questManager.getProgress().map((res, i) => {
       let questAssign = questAssignments[i];
       let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
       return `${questAssign.n}${questAssign.f > 1 ? "*" : ""}${circle}`;
     });
-    
+
     if (current) {
       let questAssign = questAssignments[this.questManager.getCurrentQuestNumber()];
       status.push(
         `${questAssign.n}${questAssign.f > 1 ? "*" : ""}:black_circle:`,
       );
     }
-    
+
     if (status.length < GameConfiguration.QUEST_NAMES.length) {
       status = status.concat(
         _.times(GameConfiguration.QUEST_NAMES.length - status.length, (i) => {
@@ -454,7 +561,7 @@ export class Avalon {
 
   async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
     const questExecutionService = new QuestExecutionService(this.api, this.actionService);
-    
+
     const { failed, succeeded } = await questExecutionService.executeQuest(
       questPlayers,
       this.gameState.players,
@@ -469,7 +576,7 @@ export class Avalon {
     // Evaluate quest result and record it
     let questAssign = this.questManager.getCurrentQuestAssignment();
     const currentQuestNumber = this.questManager.getCurrentQuestNumber();
-    
+
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
         this.questManager.recordQuestResult("good");
@@ -482,7 +589,7 @@ export class Avalon {
       this.questManager.recordQuestResult("good");
       await this.broadcastQuestResult(questPlayers, "success", 0, 0, currentQuestNumber);
     }
-    
+
     await this.evaluateEndGame(this.questManager.calculateScore());
     return true;
   }
@@ -582,7 +689,7 @@ export class Avalon {
       let assassin = this.gameState.assassin;
       let merlin = merlinArray[0];
       const killablePlayers = this.gameState.players.filter((p) => p.role && RoleManager.isGoodPlayer(p.role));
-      
+
       // Transition to assassination phase
       this.gameState.transitionToPhase(GamePhase.ASSASSINATION);
       await this.assassinMerlinKill(assassin, merlin, killablePlayers);
@@ -643,14 +750,14 @@ export class Avalon {
       GameConfiguration.QUEST_NAMES,
       this.questManager.getAllQuestAssignments()
     );
-    
+
     // Transition to game ended
     this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
-    
-    const winMessage = accused.role === "merlin" 
-      ? GameConstants.WIN_MESSAGES.evilAssassinWin 
+
+    const winMessage = accused.role === "merlin"
+      ? GameConstants.WIN_MESSAGES.evilAssassinWin
       : GameConstants.WIN_MESSAGES.goodAssassinWin;
-    
+
     await this.messenger.broadcastSame(
       this.gameState.players,
       resultBlocks,
