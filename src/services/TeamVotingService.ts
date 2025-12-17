@@ -3,6 +3,7 @@ import { Player, TeamProposal } from "../types";
 import { ActionCollector } from "./ActionCollector";
 import { MessageBlockBuilder } from "../message-block-builder";
 import { IActionListenerService } from "../interfaces";
+import { ProposalHistoryEntry } from "../domain/GameState";
 
 /**
  * Service for handling team proposal voting
@@ -15,14 +16,14 @@ export class TeamVotingService {
 
   /**
    * Conduct a vote on a team proposal
-   * @returns true if team approved, false if rejected
+   * @returns Object containing approval status and vote details
    */
   async voteOnTeam(
     proposal: TeamProposal,
     allPlayers: Player[],
     playerDms: Record<string, string>,
     questOrder: string[]
-  ): Promise<boolean> {
+  ): Promise<{ approved: boolean; approveVotes: Player[]; rejectVotes: Player[] }> {
     // Send voting messages to all players and collect their message timestamps
     const playerMessages: Array<[Player, string]> = [];
     await Promise.all(allPlayers.map(async (p) => {
@@ -104,6 +105,7 @@ export class TeamVotingService {
       });
     });
 
-    return approveVotes.length > rejectVotes.length;
+    const approved = approveVotes.length > rejectVotes.length;
+    return { approved, approveVotes, rejectVotes };
   }
 }

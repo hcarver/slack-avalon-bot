@@ -1,6 +1,16 @@
 import { Player, Role } from "../types";
 import { GamePhaseManager, GamePhase } from "./GamePhaseManager";
 
+export interface ProposalHistoryEntry {
+  questNumber: number;
+  attemptNumber: number;
+  leader: Player;
+  members: Player[];
+  approved: boolean;
+  approveVotes: Player[];
+  rejectVotes: Player[];
+}
+
 export class GameState {
   readonly players: Player[];
   readonly playerDms: Record<string, string>;
@@ -17,6 +27,7 @@ export class GameState {
   questPlayers: Player[];
   isRunning: boolean;
   private phaseManager: GamePhaseManager;
+  proposalHistory: ProposalHistoryEntry[];
 
   constructor(
     players: Player[],
@@ -41,6 +52,7 @@ export class GameState {
     this.questPlayers = [];
     this.isRunning = true;
     this.phaseManager = new GamePhaseManager();
+    this.proposalHistory = [];
   }
 
   getCurrentLeader(): Player {
@@ -99,6 +111,14 @@ export class GameState {
 
   canTransitionTo(phase: GamePhase): boolean {
     return this.phaseManager.canTransitionTo(phase);
+  }
+
+  addProposalToHistory(entry: ProposalHistoryEntry): void {
+    this.proposalHistory.push(entry);
+  }
+
+  getProposalHistory(): ProposalHistoryEntry[] {
+    return [...this.proposalHistory];
   }
 }
 

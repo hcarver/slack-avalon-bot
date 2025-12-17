@@ -105,7 +105,9 @@ describe('TeamVotingService', () => {
       }
       
       const result = await votePromise;
-      expect(result).toBe(true); // 3 approve > 2 reject
+      expect(result.approved).toBe(true); // 3 approve > 2 reject
+      expect(result.approveVotes.length).toBe(3);
+      expect(result.rejectVotes.length).toBe(2);
     });
 
     it('should return false when majority rejects', async () => {
@@ -128,7 +130,9 @@ describe('TeamVotingService', () => {
       }
       
       const result = await votePromise;
-      expect(result).toBe(false); // 2 approve < 3 reject
+      expect(result.approved).toBe(false); // 2 approve < 3 reject
+      expect(result.approveVotes.length).toBe(2);
+      expect(result.rejectVotes.length).toBe(3);
     });
 
     it('should return false on tie vote', async () => {
@@ -159,7 +163,9 @@ describe('TeamVotingService', () => {
       }
       
       const result = await votePromise;
-      expect(result).toBe(false); // Ties fail
+      expect(result.approved).toBe(false); // Ties fail
+      expect(result.approveVotes.length).toBe(2);
+      expect(result.rejectVotes.length).toBe(2);
     });
 
     it('should update all players messages after each vote', async () => {
@@ -260,7 +266,9 @@ describe('TeamVotingService', () => {
       });
       
       const result = await votePromise;
-      expect(result).toBe(true); // 1 approve > 0 reject
+      expect(result.approved).toBe(true); // 1 approve > 0 reject
+      expect(result.approveVotes.length).toBe(1);
+      expect(result.rejectVotes.length).toBe(0);
     });
 
     it('should handle single player voting (reject)', async () => {
@@ -282,7 +290,9 @@ describe('TeamVotingService', () => {
       });
       
       const result = await votePromise;
-      expect(result).toBe(false); // 0 approve < 1 reject
+      expect(result.approved).toBe(false); // 0 approve < 1 reject
+      expect(result.approveVotes.length).toBe(0);
+      expect(result.rejectVotes.length).toBe(1);
     });
 
     it('should use correct quest name from questOrder', async () => {

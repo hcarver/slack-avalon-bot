@@ -386,17 +386,40 @@ export class Avalon {
 
     // Auto-accept teams on the 5th attempt
     if(proposal.isLastAttempt()) {
+      // Record auto-accepted proposal
+      this.gameState.addProposalToHistory({
+        questNumber: proposal.questNumber,
+        attemptNumber: proposal.attemptNumber,
+        leader: proposal.leader,
+        members: proposal.members,
+        approved: true,
+        approveVotes: this.gameState.players,
+        rejectVotes: []
+      });
       return true;
     }
 
     // Vote on the team
     const teamVotingService = new TeamVotingService(this.api, this.actionService);
-    return await teamVotingService.voteOnTeam(
+    const voteResult = await teamVotingService.voteOnTeam(
       proposal,
       this.gameState.players,
       this.gameState.playerDms,
       GameConfiguration.QUEST_NAMES
     );
+
+    // Record proposal in history
+    this.gameState.addProposalToHistory({
+      questNumber: proposal.questNumber,
+      attemptNumber: proposal.attemptNumber,
+      leader: proposal.leader,
+      members: proposal.members,
+      approved: voteResult.approved,
+      approveVotes: voteResult.approveVotes,
+      rejectVotes: voteResult.rejectVotes
+    });
+
+    return voteResult.approved;
   }
 
   getStatus(current: boolean): string {
