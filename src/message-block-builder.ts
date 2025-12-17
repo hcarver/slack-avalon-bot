@@ -17,7 +17,7 @@ export class MessageBlockBuilder {
     totalPlayers: number
   ): any[] {
     const blocks: any[] = [];
-    
+
     // Header
     blocks.push({
       type: 'header',
@@ -44,7 +44,7 @@ export class MessageBlockBuilder {
     const roleEmoji = RoleManager.getRoleEmoji(player.role!);
     const roleName = RoleManager.getRoleName(player.role!);
     const alignment = isEvil ? "🔴 Evil" : "🔵 Good";
-    
+
     blocks.push({
       type: 'section',
       text: {
@@ -89,6 +89,15 @@ export class MessageBlockBuilder {
       });
     }
 
+    blocks.push({ type: 'divider' });
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*🆕 Fun Features:*\n* Try DMing me the word "history".`
+      }
+    });
+
     return blocks;
   }
 
@@ -102,12 +111,12 @@ export class MessageBlockBuilder {
     questOrder: string[]
   ): any[] {
     const blocks: any[] = [];
-    
+
     // Determine winner
     const evilWins = victoryMessage.includes("Minions of Mordred win");
     const winnerEmoji = evilWins ? "🔴" : "🔵";
     const winnerText = evilWins ? "EVIL WINS!" : "GOOD WINS!";
-    
+
     // Victory header
     blocks.push({
       type: 'header',
@@ -153,12 +162,12 @@ export class MessageBlockBuilder {
     // Group players by team
     const evilPlayers = [];
     const goodPlayers = [];
-    
+
     for (let player of players) {
       const roleEmoji = RoleManager.getRoleEmoji(player.role!);
       const roleName = RoleManager.getRoleName(player.role!);
       const playerInfo = `${roleEmoji} ${M.formatAtUser(player)} - *${roleName}*`;
-      
+
       if (RoleManager.isGoodPlayer(player.role!)) {
         goodPlayers.push(playerInfo);
       } else {
@@ -185,7 +194,7 @@ export class MessageBlockBuilder {
     for (let res of progress) {
       score[res]++;
     }
-    
+
     blocks.push({
       type: 'context',
       elements: [{
@@ -213,7 +222,7 @@ export class MessageBlockBuilder {
     for (let i = 0; i < 5; i++) {
       let icon = "⚪";
       const questName = questOrder[i].charAt(0).toUpperCase() + questOrder[i].slice(1);
-      
+
       let numPlayers = "";
       if (questAssignments) {
         const assignment = questAssignments[i];
@@ -262,11 +271,11 @@ export class MessageBlockBuilder {
     currentQuestNum: number
   ): any[] {
     const blocks: any[] = [];
-    
+
     // Header
     const resultEmoji = result === "success" ? "✅" : "❌";
     const resultText = result === "success" ? "SUCCESS" : "FAILED";
-    
+
     blocks.push({
       type: 'header',
       text: {
@@ -314,7 +323,7 @@ export class MessageBlockBuilder {
     for (let res of progress) {
       score[res]++;
     }
-    
+
     blocks.push({
       type: 'context',
       elements: [{
@@ -363,7 +372,7 @@ export class MessageBlockBuilder {
     questAssignments: QuestAssignment[]
   ): any[] {
     const resultBlocks: any[] = [];
-    
+
     if (!wasCorrect) {
       resultBlocks.push({
         type: 'header',
@@ -413,12 +422,12 @@ export class MessageBlockBuilder {
 
     const evilPlayers = [];
     const goodPlayers = [];
-    
+
     for (let player of players) {
       const roleEmoji = RoleManager.getRoleEmoji(player.role!);
       const roleName = RoleManager.getRoleName(player.role!);
       const playerInfo = `${roleEmoji} ${M.formatAtUser(player)} - *${roleName}*`;
-      
+
       if (RoleManager.isGoodPlayer(player.role!)) {
         goodPlayers.push(playerInfo);
       } else {
@@ -653,7 +662,7 @@ export class MessageBlockBuilder {
     questAssignments: QuestAssignment[]
   ): any[] {
     const M = require("./message-helpers");
-    
+
     let order = allPlayers.map((p) =>
       p.playerId == leader.playerId ? `*${M.formatAtUser(p)}*` : M.formatAtUser(p),
     );

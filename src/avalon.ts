@@ -32,7 +32,7 @@ export class Avalon {
   bolt: any;
   messenger!: GameMessenger; // Initialized in start()
   gameConfig!: GameConfiguration; // Initialized in start()
-  
+
   // Services
   private messageService: IMessageService;
   private actionService: IActionListenerService;
@@ -148,7 +148,7 @@ export class Avalon {
     this.channel = channel;
     this.playerIds = players;
     this.config = structuredClone(Avalon.DEFAULT_CONFIG);
-    
+
     // Initialize services
     this.messageService = new SlackMessageService(api);
     this.actionService = new SlackActionListenerService(bolt);
