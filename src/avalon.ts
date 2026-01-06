@@ -353,7 +353,8 @@ export class Avalon {
         const result = questProgress[questNum];
         const resultIcon = result.outcome === "good" ? "🔵" : "🔴";
         const resultText = result.outcome === "good" ? "PASS" : "FAIL";
-        history += " ".repeat(8) + "  " + resultIcon + " " + resultText + "\n";
+        const failText = result.failCount > 0 ? ` (${result.failCount} fail${result.failCount > 1 ? 's' : ''})` : '';
+        history += " ".repeat(8) + "  " + resultIcon + " " + resultText + failText + "\n";
       }
 
       if (questNum < Math.max(questProgress.length, proposalsByQuest.size) - 1) {
