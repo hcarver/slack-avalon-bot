@@ -1,4 +1,4 @@
-import { Player, QuestAssignment, Role, TeamProposal } from "./types";
+import { Player, QuestAssignment, Role, TeamProposal, QuestResult } from "./types";
 import { RoleManager } from "./role-manager";
 
 const M = require("./message-helpers");
@@ -107,7 +107,7 @@ export class MessageBlockBuilder {
   static createEndGameBlocks(
     victoryMessage: string,
     players: Player[],
-    progress: string[],
+    progress: QuestResult[],
     questOrder: string[]
   ): any[] {
     const blocks: any[] = [];
@@ -192,7 +192,7 @@ export class MessageBlockBuilder {
     // Game stats
     let score = { good: 0, bad: 0 };
     for (let res of progress) {
-      score[res]++;
+      score[res.outcome]++;
     }
 
     blocks.push({
@@ -210,7 +210,7 @@ export class MessageBlockBuilder {
    * Creates blocks for quest progress display
    */
   static createQuestProgressBlocks(
-    progress: string[],
+    progress: QuestResult[],
     questOrder: string[],
     current: boolean = false,
     questAssignments?: QuestAssignment[],
@@ -230,7 +230,7 @@ export class MessageBlockBuilder {
       }
 
       if (i < progress.length) {
-        icon = progress[i] === "good" ? "🔵" : "🔴";
+        icon = progress[i].outcome === "good" ? "🔵" : "🔴";
       } else if (current && currentQuestNum !== undefined && i === currentQuestNum) {
         icon = "⚫";
       }
@@ -265,7 +265,7 @@ export class MessageBlockBuilder {
     failCount: number,
     failsRequired: number,
     questName: string,
-    progress: string[],
+    progress: QuestResult[],
     questOrder: string[],
     questAssignments: QuestAssignment[],
     currentQuestNum: number
@@ -321,7 +321,7 @@ export class MessageBlockBuilder {
     // Score update
     let score = { good: 0, bad: 0 };
     for (let res of progress) {
-      score[res]++;
+      score[res.outcome]++;
     }
 
     blocks.push({
@@ -367,7 +367,7 @@ export class MessageBlockBuilder {
     merlinId: string,
     wasCorrect: boolean,
     players: Player[],
-    progress: string[],
+    progress: QuestResult[],
     questOrder: string[],
     questAssignments: QuestAssignment[]
   ): any[] {
@@ -657,7 +657,7 @@ export class MessageBlockBuilder {
     leader: Player,
     questNumber: number,
     playerIdsWhoHaveQuested: string[],
-    questProgress: string[],
+    questProgress: QuestResult[],
     questOrder: string[],
     questAssignments: QuestAssignment[]
   ): any[] {

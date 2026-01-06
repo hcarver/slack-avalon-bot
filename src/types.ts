@@ -97,7 +97,12 @@ export interface GameScore {
   bad: number;
 }
 
-export type QuestResult = 'good' | 'bad';
+export type QuestOutcome = 'good' | 'bad';
+
+export interface QuestResult {
+  outcome: QuestOutcome;
+  failCount: number;
+}
 
 export type QuestPhase = 'Team Selection' | 'Team Voting' | 'Quest';
 

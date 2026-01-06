@@ -60,7 +60,7 @@ export class QuestManager {
   calculateScore(): { good: number; bad: number } {
     const score = { good: 0, bad: 0 };
     for (let res of this.progress) {
-      score[res]++;
+      score[res.outcome]++;
     }
     return score;
   }
@@ -103,17 +103,17 @@ export class QuestManager {
 
     if (failCount === 0) {
       return {
-        result: 'good',
+        result: { outcome: 'good', failCount: 0 },
         message: 'All team members succeeded!'
       };
     } else if (failCount < questAssign.f) {
       return {
-        result: 'good',
+        result: { outcome: 'good', failCount },
         message: `${failCount} fail vote${failCount > 1 ? 's' : ''}, but ${questAssign.f} required to fail the quest`
       };
     } else {
       return {
-        result: 'bad',
+        result: { outcome: 'bad', failCount },
         message: `${failCount} fail vote${failCount > 1 ? 's' : ''} - quest failed!`
       };
     }

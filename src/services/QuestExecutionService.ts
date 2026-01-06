@@ -22,7 +22,7 @@ export class QuestExecutionService {
     allPlayers: Player[],
     leader: Player,
     questNumber: number,
-    questProgress: string[],
+    questProgress: QuestResult[],
     playerDms: Record<string, string>,
     questOrder: string[],
     questAssignments: QuestAssignment[]

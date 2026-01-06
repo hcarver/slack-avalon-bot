@@ -353,7 +353,10 @@ describe('QuestExecutionService', () => {
     });
 
     it('should pass quest progress to message builder', async () => {
-      const questProgress = ['success', 'fail'];
+      const questProgress = [
+        { outcome: 'good' as const, failCount: 0 },
+        { outcome: 'bad' as const, failCount: 2 }
+      ];
       
       const questPromise = service.executeQuest(
         questPlayers,

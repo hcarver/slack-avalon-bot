@@ -351,8 +351,8 @@ export class Avalon {
       // Show quest result if available
       if (questNum < questProgress.length) {
         const result = questProgress[questNum];
-        const resultIcon = result === "good" ? "🔵" : "🔴";
-        const resultText = result === "good" ? "PASS" : "FAIL";
+        const resultIcon = result.outcome === "good" ? "🔵" : "🔴";
+        const resultText = result.outcome === "good" ? "PASS" : "FAIL";
         history += " ".repeat(8) + "  " + resultIcon + " " + resultText + "\n";
       }
 
@@ -534,7 +534,7 @@ export class Avalon {
 
     let status = this.questManager.getProgress().map((res, i) => {
       let questAssign = questAssignments[i];
-      let circle = res == "good" ? ":large_blue_circle:" : ":red_circle:";
+      let circle = res.outcome == "good" ? ":large_blue_circle:" : ":red_circle:";
       return `${questAssign.n}${questAssign.f > 1 ? "*" : ""}${circle}`;
     });
 
@@ -579,14 +579,14 @@ export class Avalon {
 
     if (failed.length > 0) {
       if (failed.length < questAssign.f) {
-        this.questManager.recordQuestResult("good");
+        this.questManager.recordQuestResult({ outcome: "good", failCount: failed.length });
         await this.broadcastQuestResult(questPlayers, "success", failed.length, 0, currentQuestNumber);
       } else {
-        this.questManager.recordQuestResult("bad");
+        this.questManager.recordQuestResult({ outcome: "bad", failCount: failed.length });
         await this.broadcastQuestResult(questPlayers, "failure", failed.length, questAssign.f, currentQuestNumber);
       }
     } else {
-      this.questManager.recordQuestResult("good");
+      this.questManager.recordQuestResult({ outcome: "good", failCount: 0 });
       await this.broadcastQuestResult(questPlayers, "success", 0, 0, currentQuestNumber);
     }
 
@@ -647,7 +647,7 @@ export class Avalon {
     // Score update
     let score = { good: 0, bad: 0 };
     for (let res of this.questManager.getProgress()) {
-      score[res]++;
+      score[res.outcome]++;
     }
 
     blocks.push({
