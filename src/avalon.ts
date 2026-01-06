@@ -41,6 +41,9 @@ export class Avalon {
   private channel: any;
   private playerIds: UserId[];
   private config: GameConfig; // Added for message listening
+  
+  // Track history message timestamps for auto-updating
+  private historyMessageTimestamps: Map<string, string> = new Map(); // playerId -> message timestamp
 
   static MIN_PLAYERS = 5;
 
@@ -236,6 +239,9 @@ export class Avalon {
       (player) => `You are ${GameConstants.getRoleName(player.role!)}`
     );
 
+    // Send initial history to all players
+    await this.sendHistoryToAllPlayers();
+
     // Transition to team selection phase
     this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
 
@@ -367,6 +373,42 @@ export class Avalon {
     history += "```\n\n";
 
     return history;
+  }
+
+  /**
+   * Send initial history message to all players
+   */
+  private async sendHistoryToAllPlayers(): Promise<void> {
+    const historyText = this.formatGameHistory();
+    
+    await Promise.all(this.gameState.players.map(async (player) => {
+      const resp = await this.api.chat.postMessage({
+        channel: this.gameState.playerDms[player.playerId],
+        text: historyText,
+      });
+      
+      if (resp.ts) {
+        this.historyMessageTimestamps.set(player.playerId, resp.ts);
+      }
+    }));
+  }
+
+  /**
+   * Update history messages for all players
+   */
+  private async updateHistoryForAllPlayers(): Promise<void> {
+    const historyText = this.formatGameHistory();
+    
+    await Promise.all(this.gameState.players.map(async (player) => {
+      const messageTs = this.historyMessageTimestamps.get(player.playerId);
+      if (messageTs) {
+        await this.api.chat.update({
+          channel: this.gameState.playerDms[player.playerId],
+          ts: messageTs,
+          text: historyText,
+        });
+      }
+    }));
   }
 
   async playRound() {
@@ -529,6 +571,9 @@ export class Avalon {
       rejectVotes: voteResult.rejectVotes
     });
 
+    // Update history for all players after team vote
+    await this.updateHistoryForAllPlayers();
+
     return voteResult.approved;
   }
 
@@ -592,6 +637,9 @@ export class Avalon {
       this.questManager.recordQuestResult({ outcome: "good", failCount: 0 });
       await this.broadcastQuestResult(questPlayers, "success", 0, 0, currentQuestNumber);
     }
+
+    // Update history for all players after quest completes
+    await this.updateHistoryForAllPlayers();
 
     await this.evaluateEndGame(this.questManager.calculateScore());
     return true;
