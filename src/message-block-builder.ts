@@ -89,15 +89,6 @@ export class MessageBlockBuilder {
       });
     }
 
-    blocks.push({ type: 'divider' });
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `*🆕 Fun Features:*\n* Try DMing me the word "history".`
-      }
-    });
-
     return blocks;
   }
 

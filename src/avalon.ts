@@ -245,9 +245,6 @@ export class Avalon {
     // Transition to team selection phase
     this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
 
-    // Set up history command handler
-    this.setupHistoryCommandHandler();
-
     (async () => {
       while (!this.gameState.isGameEnded()) {
         await this.playRound();
@@ -262,37 +259,6 @@ export class Avalon {
 
   quit() {
     this.gameState.endGame();
-  }
-
-  private setupHistoryCommandHandler(): void {
-    this.bolt.addMessageListener(async ({event}) => {
-      // Only process plain messages
-      if (event.subtype !== undefined) return;
-
-      // Check if it's a DM
-      const result = await this.api.conversations.info({ channel: event.channel });
-      const channel = result.channel;
-      if (!channel.is_im) return;
-
-      // Check if message contains "history"
-      if (!event.text || !event.text.toLowerCase().match(/\bhistory\b/i)) return;
-
-      // Check if the game is still running
-      if (!this.gameState || !this.gameState.isRunning) return;
-
-      // Find the player
-      const userId = event.user;
-      const player = this.gameState.players.find(p => p.userId === userId);
-
-      if (!player) return;
-
-      // Format and send the history
-      const historyText = this.formatGameHistory();
-      await this.api.chat.postMessage({
-        text: historyText,
-        channel: event.channel,
-      });
-    });
   }
 
   private formatGameHistory(): string {
