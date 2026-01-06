@@ -21,7 +21,8 @@ export class RoleService {
       }
     }
 
-    // Prefer to assign assassin to a generic evil player without special abilities
+    // Select an evil player to be the assassin
+    // Prefer generic 'bad' roles over special evil roles
     const genericEvils = evils.filter(p => p.role === 'bad');
     const assassin = genericEvils.length > 0 
       ? genericEvils[Math.floor(Math.random() * genericEvils.length)]

@@ -54,7 +54,7 @@ export class MessageBlockBuilder {
     });
 
     // Assassin notification
-    if (assassinPlayerId === player.playerId && player.role !== "assassin") {
+    if (assassinPlayerId === player.playerId) {
       blocks.push({
         type: 'section',
         text: {

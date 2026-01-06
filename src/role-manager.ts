@@ -10,7 +10,6 @@ export class RoleManager {
       'morgana': '👹',
       'mordred': '😈',
       'oberon': '👽',
-      'assassin': '⚔️',
       'bad': '🔴',
       'good': '🔵'
     };
@@ -24,7 +23,6 @@ export class RoleManager {
       'morgana': 'MORGANA',
       'mordred': 'MORDRED',
       'oberon': 'OBERON',
-      'assassin': 'THE ASSASSIN',
       'bad': 'a Minion of Mordred',
       'good': 'a Loyal Servant of Arthur'
     };
@@ -66,7 +64,6 @@ export class RoleManager {
       'morgana': 'Pretend to be Merlin to confuse Percival.',
       'mordred': 'You are hidden from Merlin. Use this to your advantage!',
       'oberon': 'You work alone. Sow chaos without revealing yourself to other evil players.',
-      'assassin': 'Sabotage quests and identify Merlin for the final kill.',
       'bad': 'Sabotage quests to make them fail. Work with your evil teammates.',
       'good': 'Choose teams wisely and make quests succeed!'
     };

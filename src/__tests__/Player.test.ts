@@ -38,8 +38,8 @@ describe('Player', () => {
       expect(player.isEvil()).toBe(true);
     });
 
-    it('should return true for assassin', () => {
-      const player = new Player('p1' as PlayerId, 'u1' as UserId, 'assassin');
+    it('should return true for generic bad', () => {
+      const player = new Player('p1' as PlayerId, 'u1' as UserId, 'bad');
       expect(player.isEvil()).toBe(true);
     });
   });

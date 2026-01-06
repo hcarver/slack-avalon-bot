@@ -133,10 +133,6 @@ export class Avalon {
             assigns[assigns.indexOf("bad")] = role;
         }
       });
-      let badIndex = assigns.indexOf("bad");
-      if (badIndex >= 0) {
-        assigns[badIndex] = "assassin";
-      }
     }
     return assigns;
   }

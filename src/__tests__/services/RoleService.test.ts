@@ -140,8 +140,51 @@ describe('RoleService', () => {
     });
   });
 
-  describe('assassin selection preference', () => {
-    it('should prefer generic evil player (bad) as assassin', () => {
+  describe('assassin selection', () => {
+    it('should select a generic bad player as the assassin when available', () => {
+      mockGameConfig.getRoleAssignments.mockReturnValue([
+        'good' as Role,
+        'good' as Role,
+        'merlin' as Role,
+        'bad' as Role,
+        'bad' as Role
+      ]);
+
+      const results: Role[] = [];
+
+      for (let i = 0; i < 20; i++) {
+        const testPlayers = [
+          new Player('p1' as PlayerId, 'u1' as UserId),
+          new Player('p2' as PlayerId, 'u2' as UserId),
+          new Player('p3' as PlayerId, 'u3' as UserId),
+          new Player('p4' as PlayerId, 'u4' as UserId),
+          new Player('p5' as PlayerId, 'u5' as UserId)
+        ];
+
+        const result = roleService.assignRoles(testPlayers);
+        results.push(result.assassin.role!);
+      }
+
+      // All assassins should be bad (generic evil)
+      expect(results.every(role => role === 'bad')).toBe(true);
+    });
+
+    it('should select from special evil roles when no generic bad exists', () => {
+      mockGameConfig.getRoleAssignments.mockReturnValue([
+        'good' as Role,
+        'good' as Role,
+        'good' as Role,
+        'mordred' as Role,
+        'morgana' as Role
+      ]);
+
+      const result = roleService.assignRoles(players);
+
+      expect(['mordred', 'morgana']).toContain(result.assassin.role);
+      expect(result.evils).toContain(result.assassin);
+    });
+
+    it('should prefer generic bad over special evil roles', () => {
       mockGameConfig.getRoleAssignments.mockReturnValue([
         'good' as Role,
         'good' as Role,
@@ -165,27 +208,12 @@ describe('RoleService', () => {
         results.push(result.assassin);
       }
 
-      const genericEvilAssassins = results.filter(a => a.role === 'bad');
-
-      expect(genericEvilAssassins.length).toBe(20);
+      // Should always prefer generic bad players
+      const genericBadAssassins = results.filter(a => a.role === 'bad');
+      expect(genericBadAssassins.length).toBe(20);
     });
 
-    it('should assign assassin to special role if no generic evil exists', () => {
-      mockGameConfig.getRoleAssignments.mockReturnValue([
-        'good' as Role,
-        'good' as Role,
-        'good' as Role,
-        'mordred' as Role,
-        'morgana' as Role
-      ]);
-
-      const result = roleService.assignRoles(players);
-
-      expect(['mordred', 'morgana']).toContain(result.assassin.role);
-      expect(result.evils).toContain(result.assassin);
-    });
-
-    it('should randomly select from multiple generic evil players', () => {
+    it('should randomly select from multiple bad players', () => {
       mockGameConfig.getRoleAssignments.mockReturnValue([
         'good' as Role,
         'bad' as Role,
@@ -195,6 +223,7 @@ describe('RoleService', () => {
       ]);
 
       const assassins = new Set<string>();
+      const assassinRoles = new Set<Role>();
 
       for (let i = 0; i < 30; i++) {
         const testPlayers = [
@@ -207,9 +236,56 @@ describe('RoleService', () => {
 
         const result = roleService.assignRoles(testPlayers);
         assassins.add(result.assassin.playerId);
+        assassinRoles.add(result.assassin.role!);
       }
 
+      // Should select from different bad players across runs
       expect(assassins.size).toBeGreaterThan(1);
+      // Should only ever pick bad players (never mordred)
+      expect(assassinRoles.size).toBe(1);
+      expect(assassinRoles.has('bad')).toBe(true);
+    });
+
+    it('should consistently select the single generic bad player when available', () => {
+      mockGameConfig.getRoleAssignments.mockReturnValue([
+        'good' as Role,
+        'good' as Role,
+        'good' as Role,
+        'bad' as Role,
+        'morgana' as Role
+      ]);
+
+      for (let i = 0; i < 10; i++) {
+        const testPlayers = [
+          new Player('p1' as PlayerId, 'u1' as UserId),
+          new Player('p2' as PlayerId, 'u2' as UserId),
+          new Player('p3' as PlayerId, 'u3' as UserId),
+          new Player('p4' as PlayerId, 'u4' as UserId),
+          new Player('p5' as PlayerId, 'u5' as UserId)
+        ];
+
+        const result = roleService.assignRoles(testPlayers);
+        
+        // Should always pick the single bad player
+        expect(result.assassin.role).toBe('bad');
+        expect(result.evils).toContain(result.assassin);
+      }
+    });
+
+    it('should always assign an assassin from evil players', () => {
+      mockGameConfig.getRoleAssignments.mockReturnValue([
+        'good' as Role,
+        'good' as Role,
+        'merlin' as Role,
+        'bad' as Role,
+        'bad' as Role
+      ]);
+
+      const result = roleService.assignRoles(players);
+
+      expect(result.assassin).toBeDefined();
+      expect(result.evils).toContain(result.assassin);
+      expect(result.assassin.isEvil()).toBe(true);
     });
   });
 });

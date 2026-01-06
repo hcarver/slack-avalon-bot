@@ -31,7 +31,7 @@ describe('GameState', () => {
       playerDms,
       { id: 'channel1' },
       false,
-      ['merlin', 'assassin'],
+      ['merlin'],
       evils,
       players[1]
     );

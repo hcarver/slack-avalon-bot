@@ -9,7 +9,6 @@ export class GameConstants {
   static readonly ROLE_NAMES: Record<Role, string> = {
     bad: ":red_circle: Minion of Mordred",
     good: ":large_blue_circle: Loyal Servant of Arthur",
-    assassin: ":crossed_swords: THE ASSASSIN :red_circle: Minion of Mordred",
     oberon: ":alien: OBERON :red_circle: Minion of Mordred: Unknown to the other Minions of Mordred",
     morgana: ":japanese_ogre: MORGANA :red_circle: Minion of Mordred. You pose as MERLIN",
     mordred: ":smiling_imp: MORDRED :red_circle: Unknown to MERLIN",
@@ -21,7 +20,6 @@ export class GameConstants {
   static readonly ROLE_SHORT_NAMES: Record<Role, string> = {
     bad: "Minion",
     good: "Servant",
-    assassin: "Assassin",
     oberon: "Oberon",
     morgana: "Morgana",
     mordred: "Mordred",

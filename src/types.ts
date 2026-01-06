@@ -9,8 +9,7 @@ export type Role =
   | 'percival'
   | 'morgana'
   | 'mordred'
-  | 'oberon'
-  | 'assassin';
+  | 'oberon';
 
 export class Player {
   constructor(

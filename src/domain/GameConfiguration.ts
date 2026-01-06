@@ -20,9 +20,9 @@ export class GameConfiguration {
   // Game constants
   static readonly MIN_PLAYERS = 5;
   static readonly MAX_PLAYERS = 10;
-  
+
   static readonly QUEST_NAMES = ['first', 'second', 'third', 'fourth', 'fifth'];
-  
+
   // Quest assignments per player count [n, f]
   // n = number of players on quest, f = number of fails required
   static readonly QUEST_ASSIGNMENTS: QuestAssignment[][] = [
@@ -43,17 +43,17 @@ export class GameConfiguration {
   // Role assignments per player count
   static readonly ROLE_ASSIGNMENTS: Role[][] = [
     // 5 players: 3 good, 2 evil
-    ['good', 'good', 'merlin', 'bad', 'assassin'],
+    ['good', 'good', 'merlin', 'bad', 'bad'],
     // 6 players: 4 good, 2 evil
-    ['good', 'good', 'good', 'merlin', 'bad', 'assassin'],
+    ['good', 'good', 'good', 'merlin', 'bad', 'bad'],
     // 7 players: 4 good, 3 evil
-    ['good', 'good', 'good', 'merlin', 'bad', 'bad', 'assassin'],
+    ['good', 'good', 'good', 'merlin', 'bad', 'bad', 'bad'],
     // 8 players: 5 good, 3 evil
-    ['good', 'good', 'good', 'good', 'merlin', 'bad', 'bad', 'assassin'],
+    ['good', 'good', 'good', 'good', 'merlin', 'bad', 'bad', 'bad'],
     // 9 players: 6 good, 3 evil
-    ['good', 'good', 'good', 'good', 'good', 'merlin', 'bad', 'bad', 'assassin'],
+    ['good', 'good', 'good', 'good', 'good', 'merlin', 'bad', 'bad', 'bad'],
     // 10 players: 6 good, 4 evil
-    ['good', 'good', 'good', 'good', 'good', 'merlin', 'bad', 'bad', 'bad', 'assassin'],
+    ['good', 'good', 'good', 'good', 'good', 'merlin', 'bad', 'bad', 'bad', 'bad'],
   ];
 
   constructor(
@@ -66,13 +66,13 @@ export class GameConfiguration {
     this.specialRoles = specialRoles;
     this.resistance = resistance;
     this.order = order;
-    
+
     this.validate();
   }
 
   private validate(): void {
     // Validate player count
-    if (this.playerCount < GameConfiguration.MIN_PLAYERS || 
+    if (this.playerCount < GameConfiguration.MIN_PLAYERS ||
         this.playerCount > GameConfiguration.MAX_PLAYERS) {
       throw new GameConfigurationError(
         `Invalid player count: ${this.playerCount}. Must be ${GameConfiguration.MIN_PLAYERS}-${GameConfiguration.MAX_PLAYERS}`
@@ -90,7 +90,7 @@ export class GameConfiguration {
     // Validate role combinations
     const evilRoles = this.specialRoles.filter(r => ['morgana', 'mordred', 'oberon'].includes(r));
     const evilCount = this.getEvilCount();
-    
+
     if (evilRoles.length > evilCount) {
       throw new GameConfigurationError(
         `Too many evil special roles (${evilRoles.length}) for ${this.playerCount} players. Maximum: ${evilCount}`
@@ -122,14 +122,14 @@ export class GameConfiguration {
    */
   getRoleAssignments(): Role[] {
     const baseRoles = [...GameConfiguration.ROLE_ASSIGNMENTS[this.playerCount - GameConfiguration.MIN_PLAYERS]];
-    
+
     // Replace base roles with special roles
     for (const specialRole of this.specialRoles) {
       if (specialRole === 'merlin') {
         // Merlin is already in base roles
         continue;
       }
-      
+
       if (['morgana', 'mordred', 'oberon'].includes(specialRole)) {
         // Replace a 'bad' role
         const badIndex = baseRoles.indexOf('bad');
@@ -144,7 +144,7 @@ export class GameConfiguration {
         }
       }
     }
-    
+
     return baseRoles;
   }
 

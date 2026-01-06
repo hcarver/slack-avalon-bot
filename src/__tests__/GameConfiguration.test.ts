@@ -79,7 +79,7 @@ describe('GameConfiguration', () => {
       expect(assignments.length).toBe(5);
 
       const goodCount = assignments.filter(r => r === 'good').length;
-      const evilCount = assignments.filter(r => r === 'bad' || r === 'assassin').length;
+      const evilCount = assignments.filter(r => r === 'bad').length;
 
       expect(goodCount).toEqual(2);
       expect(evilCount).toEqual(2);
@@ -95,8 +95,7 @@ describe('GameConfiguration', () => {
       expect(assignments).toContain('morgana');
       expect(assignments).toContain('mordred');
       expect(assignments.filter(r => r === 'good').length).toEqual(2);
-      expect(assignments.filter(r => r === 'bad').length).toEqual(0); // All bad roles replaced
-      expect(assignments).toContain('assassin'); // Assassin still present
+      expect(assignments.filter(r => r === 'bad').length).toEqual(1); // One bad role remains
     });
   });
 
