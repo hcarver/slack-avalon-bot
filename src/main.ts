@@ -26,5 +26,6 @@ try {
   process.exit(1);
 }
 
-const bot = new Bot(token, connectionToken);
+const isDevelopment = process.argv.includes('dev');
+const bot = new Bot(token, connectionToken, isDevelopment);
 bot.login();

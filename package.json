@@ -7,6 +7,7 @@
   "repository": "https://github.com/docsend/slack-avalon-bot",
   "scripts": {
     "start": "ts-node src/main.ts",
+    "start:dev": "ts-node src/main.ts dev",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
@@ -40,6 +41,7 @@
   },
   "prettier": {},
   "overrides": {
-    "graceful-fs": "^4.2.11"
+    "graceful-fs": "^4.2.11",
+    "buffer-equal-constant-time": "npm:labenamata-buffer-equal-constant-time@^1.0.2"
   }
 }

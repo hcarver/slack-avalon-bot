@@ -12,18 +12,19 @@ const SlackApiRx = require("./slack-api-rx");
 const M = require("./message-helpers");
 const Avalon = require("./avalon");
 
-
 export class Bot {
   isPolling: boolean;
   api: any;
   gameConfig: any;
   game: any;
   bolt: BoltListenerManager;
+  isDevelopment: boolean;
 
   // Public: Creates a new instance of the bot.
   //
   // token - An API token from the bot integration
-  constructor(token, connectionToken) {
+  constructor(token, connectionToken, isDevelopment = false) {
+    this.isDevelopment = isDevelopment;
     this.bolt = new BoltListenerManager(new App({
       token,
       appToken: connectionToken,
@@ -217,6 +218,16 @@ export class Bot {
         channel: channel.id,
       });
       return { channel, players: [], starter: gameStarter };
+    }
+
+    if(this.isDevelopment) {
+      players = [
+        players[0],
+        players[0],
+        players[0],
+        players[0],
+        players[0],
+      ]
     }
 
     return { channel, players, starter: gameStarter };
