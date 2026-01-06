@@ -128,6 +128,8 @@ export class Bot {
   //
   // Returns a Promise that resolves to { channel, players, starter }
   async pollPlayersForGame(channel, gameStarter) {
+    const mode = this.isDevelopment ? "(dev mode)" : "";
+
     if (this.gameConfig.resistance) {
       this.bolt.client.chat.postMessage({
         text: "Who wants to play Resistance? https://amininima.files.wordpress.com/2013/05/theresistance.png",
@@ -135,7 +137,7 @@ export class Bot {
       });
     } else {
       this.bolt.client.chat.postMessage({
-        text: "Who wants to play Avalon?",
+        text: `Who wants to play Avalon? ${mode}`,
         channel: channel.id,
       });
     }
