@@ -296,6 +296,12 @@ export class Avalon {
 
     let history = "*Game History*\n\n";
 
+    // Check if there's any history to show
+    if (proposalHistory.length === 0 && questProgress.length === 0) {
+      history += "_No history to show yet. The game has just begun!_\n";
+      return history;
+    }
+
     // Create player name header - using numbered columns for clarity
     const playerCount = this.gameState.players.length;
     const playerNumbers = this.gameState.players.map((_, idx) => `P${idx + 1}`);
