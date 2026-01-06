@@ -337,7 +337,7 @@ export class Avalon {
             return M.formatAtUser(p) + " ❌";
           }
           return " ";
-        }).join(" ");
+        }).join(" | ");
 
         const status = entry.approved ? "✅ Accepted" : "❌ Rejected";
         const questCol = idx === 0 ? questName : "      ";
