@@ -31,7 +31,7 @@ export class GameUILayer {
     this.app.action(
       { action_id: checkbox_id },
       async (request) => {
-        request.ack();
+        // Note: ack() is called automatically by Bolt's autoAcknowledge middleware
         selected_options = (request.action as CheckboxesAction).selected_options.map(x => x.value);
       }
     );
@@ -40,8 +40,7 @@ export class GameUILayer {
       this.app.action(
         { action_id: submit_id },
         async (request) => {
-          const { ack } = request;
-          ack();
+          // Note: ack() is called automatically by Bolt's autoAcknowledge middleware
 
           const errors: string[] = [];
 
@@ -148,7 +147,7 @@ export class GameUILayer {
     this.app.action(
       { action_id: checkbox_id },
       async (request) => {
-        request.ack();
+        // Note: ack() is called automatically by Bolt's autoAcknowledge middleware
         selected_options = (request.action as CheckboxesAction).selected_options.map(x => x.value)
       }
     );
@@ -157,9 +156,9 @@ export class GameUILayer {
       this.app.action(
         { action_id: submit_id},
         async (request) => {
-          const {body, client, ack, logger, payload} = request;
+          const {body, client, logger, payload} = request;
           const say = (request as any).say;
-          ack();
+          // Note: ack() is called automatically by Bolt's autoAcknowledge middleware
 
           const errors = []
 
