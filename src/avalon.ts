@@ -44,6 +44,9 @@ export class Avalon {
   
   // Track history message timestamps for auto-updating
   private historyMessageTimestamps: Map<string, string> = new Map(); // playerId -> message timestamp
+  
+  // Track action message timestamps for the current game action
+  private actionMessageTimestamps: Map<string, string> = new Map(); // playerId -> message timestamp
 
   static MIN_PLAYERS = 5;
 
@@ -377,17 +380,46 @@ export class Avalon {
     }));
   }
 
+  /**
+   * Send or update action message to all players
+   */
+  private async sendOrUpdateActionMessage(blocks: any[], text: string): Promise<void> {
+    await Promise.all(this.gameState.players.map(async (player) => {
+      const messageTs = this.actionMessageTimestamps.get(player.playerId);
+      
+      if (messageTs) {
+        // Update existing message
+        await this.api.chat.update({
+          channel: this.gameState.playerDms[player.playerId],
+          ts: messageTs,
+          blocks,
+          text,
+        });
+      } else {
+        // Send new message and store timestamp
+        const resp = await this.api.chat.postMessage({
+          channel: this.gameState.playerDms[player.playerId],
+          blocks,
+          text,
+        });
+        
+        if (resp.ts) {
+          this.actionMessageTimestamps.set(player.playerId, resp.ts);
+        }
+      }
+    }));
+  }
+
   async playRound() {
     const leader = this.gameState.getCurrentLeader();
     await this.deferredActionForPlayer(leader);
     this.gameState.advanceLeader();
   }
 
-  endGame(message: string, color: string, current: boolean): void {
+  async endGame(message: string, color: string, current: boolean): Promise<void> {
     const blocks = MessageBlockBuilder.createEndGameBlocks(message, this.gameState.players, this.questManager.getProgress(), GameConfiguration.QUEST_NAMES);
 
-    this.messenger.broadcastSame(
-      this.gameState.players,
+    await this.sendOrUpdateActionMessage(
       blocks,
       message
     );
@@ -441,8 +473,7 @@ export class Avalon {
       { type: 'divider' }
     ];
 
-    await this.messenger.broadcastSame(
-      this.gameState.players,
+    await this.sendOrUpdateActionMessage(
       statusBlocks,
       `${M.formatAtUser(player)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
     );
@@ -465,6 +496,11 @@ export class Avalon {
     // Check for 5 rejections (auto-fail)
     if (this.gameState.rejectCount >= 5) {
       this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
+      await this.endGame(
+        GameConstants.WIN_MESSAGES.evilRejectionWin,
+        GameConstants.COLORS.evil,
+        false
+      );
     } else {
       // Stay in team selection phase
       this.gameState.transitionToPhase(GamePhase.TEAM_SELECTION);
@@ -523,7 +559,8 @@ export class Avalon {
       proposal,
       this.gameState.players,
       this.gameState.playerDms,
-      GameConfiguration.QUEST_NAMES
+      GameConfiguration.QUEST_NAMES,
+      this.actionMessageTimestamps
     );
 
     // Record proposal in history
@@ -584,7 +621,8 @@ export class Avalon {
       this.questManager.getProgress(),
       this.gameState.playerDms,
       GameConfiguration.QUEST_NAMES,
-      this.questManager.getAllQuestAssignments()
+      this.questManager.getAllQuestAssignments(),
+      this.actionMessageTimestamps
     );
 
     // Evaluate quest result and record it
@@ -675,9 +713,8 @@ export class Avalon {
       }]
     });
 
-    // Send to all players
-    await this.messenger.broadcastSame(
-      this.gameState.players,
+    // Update the persistent action message
+    await this.sendOrUpdateActionMessage(
       blocks,
       `${questName} Quest ${resultText}`
     );
@@ -686,7 +723,7 @@ export class Avalon {
   async evaluateEndGame(score: GameScore): Promise<void> {
     if (score.bad == GameConstants.LIMITS.questsToWin) {
       this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
-      this.endGame(
+      await this.endGame(
         GameConstants.WIN_MESSAGES.evilQuestWin,
         GameConstants.COLORS.evil,
         false
@@ -696,7 +733,7 @@ export class Avalon {
       let merlinArray = this.gameState.players.filter((player) => player.role == "merlin");
       if (!merlinArray.length) {
         this.gameState.transitionToPhase(GamePhase.GAME_ENDED);
-        this.endGame(
+        await this.endGame(
           GameConstants.WIN_MESSAGES.goodQuestWin,
           GameConstants.COLORS.good,
           false
@@ -719,8 +756,7 @@ export class Avalon {
     // Broadcast assassination phase announcement
     const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.userId);
 
-    await this.messenger.broadcastSame(
-      this.gameState.players,
+    await this.sendOrUpdateActionMessage(
       announcementBlocks,
       `${M.formatAtUser(assassin)} is the ASSASSIN. They can now try to kill MERLIN.`
     );
@@ -775,8 +811,7 @@ export class Avalon {
       ? GameConstants.WIN_MESSAGES.evilAssassinWin
       : GameConstants.WIN_MESSAGES.goodAssassinWin;
 
-    await this.messenger.broadcastSame(
-      this.gameState.players,
+    await this.sendOrUpdateActionMessage(
       resultBlocks,
       winMessage
     );

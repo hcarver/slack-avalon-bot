@@ -25,28 +25,58 @@ export class QuestExecutionService {
     questProgress: QuestResult[],
     playerDms: Record<string, string>,
     questOrder: string[],
-    questAssignments: QuestAssignment[]
+    questAssignments: QuestAssignment[],
+    actionMessageTimestamps?: Map<string, string>
   ): Promise<{ failed: Player[]; succeeded: Player[] }> {
-    // 1. Send quest messages to all players and collect their message timestamps
+    // Use existing action messages or create new ones
     const playerMessages = new Map<string, string>();
-    await Promise.all(allPlayers.map(async (p) => {
-      const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
-        questPlayers,
-        allPlayers,
-        p,
-        leader,
-        questNumber,
-        [],
-        questProgress,
-        questOrder,
-        questAssignments
-      );
-      const resp = await this.api.chat.postMessage({
-        channel: playerDms[p.playerId],
-        blocks
-      });
-      playerMessages.set(p.playerId, resp.ts as string);
-    }));
+    
+    if (actionMessageTimestamps && actionMessageTimestamps.size > 0) {
+      // Update existing action messages
+      await Promise.all(allPlayers.map(async (p) => {
+        const ts = actionMessageTimestamps.get(p.playerId);
+        if (ts) {
+          const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
+            questPlayers,
+            allPlayers,
+            p,
+            leader,
+            questNumber,
+            [],
+            questProgress,
+            questOrder,
+            questAssignments
+          );
+          await this.api.chat.update({
+            channel: playerDms[p.playerId],
+            ts,
+            blocks,
+            text: `${questOrder[questNumber]} quest`
+          });
+          playerMessages.set(p.playerId, ts);
+        }
+      }));
+    } else {
+      // Create new messages
+      await Promise.all(allPlayers.map(async (p) => {
+        const blocks = MessageBlockBuilder.createQuestExecutionBlocks(
+          questPlayers,
+          allPlayers,
+          p,
+          leader,
+          questNumber,
+          [],
+          questProgress,
+          questOrder,
+          questAssignments
+        );
+        const resp = await this.api.chat.postMessage({
+          channel: playerDms[p.playerId],
+          blocks
+        });
+        playerMessages.set(p.playerId, resp.ts as string);
+      }));
+    }
 
     // 2. Collect quest votes from questing players
     const failed: Player[] = [];

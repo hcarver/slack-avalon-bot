@@ -22,26 +22,53 @@ export class TeamVotingService {
     proposal: TeamProposal,
     allPlayers: Player[],
     playerDms: Record<string, string>,
-    questOrder: string[]
+    questOrder: string[],
+    actionMessageTimestamps?: Map<string, string>
   ): Promise<{ approved: boolean; approveVotes: Player[]; rejectVotes: Player[] }> {
-    // Send voting messages to all players and collect their message timestamps
+    // Use existing action messages or create new ones
     const playerMessages: Array<[Player, string]> = [];
-    await Promise.all(allPlayers.map(async (p) => {
-      const blocks = MessageBlockBuilder.createTeamVoteBlocks(
-        proposal,
-        allPlayers,
-        p,
-        [],
-        [],
-        questOrder
-      );
-      const resp = await this.api.chat.postMessage({
-        channel: playerDms[p.playerId],
-        blocks,
-        text: `Team vote for ${questOrder[proposal.questNumber]} quest`
-      });
-      playerMessages.push([p, resp.ts as string]);
-    }));
+    
+    if (actionMessageTimestamps && actionMessageTimestamps.size > 0) {
+      // Update existing action messages
+      await Promise.all(allPlayers.map(async (p) => {
+        const ts = actionMessageTimestamps.get(p.playerId);
+        if (ts) {
+          const blocks = MessageBlockBuilder.createTeamVoteBlocks(
+            proposal,
+            allPlayers,
+            p,
+            [],
+            [],
+            questOrder
+          );
+          await this.api.chat.update({
+            channel: playerDms[p.playerId],
+            ts,
+            blocks,
+            text: `Team vote for ${questOrder[proposal.questNumber]} quest`
+          });
+          playerMessages.push([p, ts]);
+        }
+      }));
+    } else {
+      // Create new messages
+      await Promise.all(allPlayers.map(async (p) => {
+        const blocks = MessageBlockBuilder.createTeamVoteBlocks(
+          proposal,
+          allPlayers,
+          p,
+          [],
+          [],
+          questOrder
+        );
+        const resp = await this.api.chat.postMessage({
+          channel: playerDms[p.playerId],
+          blocks,
+          text: `Team vote for ${questOrder[proposal.questNumber]} quest`
+        });
+        playerMessages.push([p, resp.ts as string]);
+      }));
+    }
 
     // Collect votes using ActionCollector
     const approveVotes: Player[] = [];
