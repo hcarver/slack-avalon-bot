@@ -410,6 +410,80 @@ export class Avalon {
     }));
   }
 
+  /**
+   * Send or update action message with per-player blocks
+   */
+  private async sendOrUpdateActionMessagePerPlayer(
+    blocksGenerator: (player: Player) => any[],
+    textGenerator: (player: Player) => string
+  ): Promise<void> {
+    await Promise.all(this.gameState.players.map(async (player) => {
+      const messageTs = this.actionMessageTimestamps.get(player.playerId);
+      const blocks = blocksGenerator(player);
+      const text = textGenerator(player);
+      
+      if (messageTs) {
+        // Update existing message
+        await this.api.chat.update({
+          channel: this.gameState.playerDms[player.playerId],
+          ts: messageTs,
+          blocks,
+          text,
+        });
+      } else {
+        // Send new message and store timestamp
+        const resp = await this.api.chat.postMessage({
+          channel: this.gameState.playerDms[player.playerId],
+          blocks,
+          text,
+        });
+        
+        if (resp.ts) {
+          this.actionMessageTimestamps.set(player.playerId, resp.ts);
+        }
+      }
+    }));
+  }
+
+  /**
+   * Create interactive choice blocks (checkboxes + button)
+   */
+  private createChoiceBlocks(
+    checkboxId: string,
+    submitId: string,
+    heading: string,
+    options: Array<{ text: string; value: string }>,
+    buttonText: string
+  ): any[] {
+    return [
+      { type: 'divider' },
+      { type: "header", text: { type: "plain_text", text: heading } },
+      { 
+        type: "actions",
+        elements: [
+          { 
+            type: "checkboxes",
+            action_id: checkboxId,
+            options: options.map(opt => ({
+              text: { type: "mrkdwn", text: opt.text },
+              value: opt.value
+            }))
+          }
+        ]
+      },
+      { 
+        type: "actions",
+        elements: [
+          { 
+            type: "button",
+            action_id: submitId,
+            text: { type: "plain_text", text: buttonText }
+          }
+        ]
+      }
+    ];
+  }
+
   async playRound() {
     const leader = this.gameState.getCurrentLeader();
     await this.deferredActionForPlayer(leader);
@@ -509,25 +583,109 @@ export class Avalon {
     return true;
   }
 
-  async choosePlayersForQuest(player: Player): Promise<boolean> {
+  async choosePlayersForQuest(leader: Player): Promise<boolean> {
     let questAssign = this.questManager.getCurrentQuestAssignment();
 
-    // Await the player's team choice
-    const playerChoice = this.gameUx.pollForDecision(
-      this.gameState.playerDms[player.playerId],
-      `Choose a team of ${questAssign.n}`,
-      this.gameState.players.map((player) => M.formatAtUser(player)),
-      "Nominate",
-      (user_id) => user_id === player.userId,
-      questAssign.n,
-      questAssign.n,
+    // Build the status blocks that all players see
+    const questName = GameConfiguration.QUEST_NAMES[this.questManager.getCurrentQuestNumber()].charAt(0).toUpperCase() + GameConfiguration.QUEST_NAMES[this.questManager.getCurrentQuestNumber()].slice(1);
+    let f = "";
+    if (questAssign.f > 1) {
+      f = "(2 fails required) ";
+    }
+    let message = ` ${questAssign.n} players ${f}to go on the ${
+      GameConfiguration.QUEST_NAMES[this.questManager.getCurrentQuestNumber()]
+    } quest.`;
+
+    let order = this.gameState.players.map((p) =>
+      p.playerId == leader.playerId
+        ? `*${M.formatAtUser(p)}*`
+        : M.formatAtUser(p),
     );
-    const idxs = await playerChoice as number[];
+
+    const statusBlocks = [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `${questName} Quest - Team Selection`,
+          emoji: true
+        }
+      },
+      ...MessageBlockBuilder.createQuestProgressBlocks(this.questManager.getProgress(), GameConfiguration.QUEST_NAMES, true, this.questManager.getAllQuestAssignments(), this.questManager.getCurrentQuestNumber()),
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `*${M.formatAtUser(leader)}* will choose${message}\n*Attempt:* ${this.gameState.rejectCount + 1}/5`
+        }
+      },
+      {
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: `Player order: ${order.join(', ')}`
+        }]
+      }
+    ];
+
+    // Create interactive blocks placeholder to get structure
+    const choiceBlocks = this.createChoiceBlocks(
+      'temp-checkbox',
+      'temp-submit',
+      `Choose a team of ${questAssign.n}`,
+      this.gameState.players.map((p, idx) => ({ text: M.formatAtUser(p), value: `${idx}` })),
+      "Nominate"
+    );
+
+    const leaderFullBlocks = [...statusBlocks, ...choiceBlocks];
+
+    // Register action handlers before sending (passing the full blocks for error handling)
+    const { checkboxId, submitId, promise } = this.gameUx.registerChoiceActions(
+      this.gameState.playerDms[leader.playerId],
+      this.gameState.players.map((p) => M.formatAtUser(p)),
+      (user_id) => user_id === leader.userId,
+      questAssign.n,
+      questAssign.n,
+      []
+    );
+
+    // Create actual interactive blocks with real IDs
+    const actualChoiceBlocks = this.createChoiceBlocks(
+      checkboxId,
+      submitId,
+      `Choose a team of ${questAssign.n}`,
+      this.gameState.players.map((p, idx) => ({ text: M.formatAtUser(p), value: `${idx}` })),
+      "Nominate"
+    );
+
+    // Send action message with per-player blocks
+    await this.sendOrUpdateActionMessagePerPlayer(
+      (player) => player.playerId === leader.playerId 
+        ? [...statusBlocks, ...actualChoiceBlocks]
+        : statusBlocks,
+      (player) => player.playerId === leader.playerId
+        ? `Choose a team of ${questAssign.n}`
+        : `${M.formatAtUser(leader)} will choose${message} (attempt number ${this.gameState.rejectCount + 1})`
+    );
+
+    // Update the registered action with message timestamp and blocks
+    const leaderMessageTs = this.actionMessageTimestamps.get(leader.playerId);
+    if (leaderMessageTs) {
+      // Re-register with the actual message info
+      this.gameUx.updateChoiceActionsContext(
+        submitId,
+        leaderMessageTs,
+        [...statusBlocks, ...actualChoiceBlocks]
+      );
+    }
+
+    // Wait for the leader's choice
+    const idxs = await promise;
     const questPlayers = idxs.map((i) => this.gameState.players[i]);
 
     // Create TeamProposal value object
     const proposal = new TeamProposal(
-      player,
+      leader,
       questPlayers,
       this.questManager.getCurrentQuestNumber(),
       this.gameState.rejectCount + 1
@@ -753,44 +911,51 @@ export class Avalon {
   async assassinMerlinKill(assassin: Player, merlin: Player, killablePlayers: Player[]): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, GameConstants.TIMING.beforeAssassination));
 
-    // Broadcast assassination phase announcement
+    // Build the announcement blocks that all players will see
     const announcementBlocks = MessageBlockBuilder.createAssassinationAnnouncementBlocks(assassin.userId);
 
-    await this.sendOrUpdateActionMessage(
-      announcementBlocks,
-      `${M.formatAtUser(assassin)} is the ASSASSIN. They can now try to kill MERLIN.`
-    );
-
-    // Assassin's choice interface
-    const assassinBlocks: any[] = [
-      {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: '⚔️ Choose Your Target',
-          emoji: true
-        }
-      },
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `You are the Assassin! 🔴 Evil's fate is in your hands.\n\nGood has won 3 quests, but you can still win by correctly identifying and killing MERLIN.\n\n*Choose wisely...*`
-        }
-      }
-    ];
-
-    const playerChoice = this.gameUx.pollForDecision(
+    // Register action handlers for the assassin's choice
+    const { checkboxId, submitId, promise } = this.gameUx.registerChoiceActions(
       this.gameState.playerDms[assassin.playerId],
-      `Choose who to assassinate`,
       killablePlayers.map((player) => M.formatAtUser(player)),
-      "⚔️ Assassinate",
       (user_id) => user_id === assassin.userId,
       1,
-      1,
+      1
     );
-    const idx = await playerChoice;
+
+    // Create interactive blocks for the assassin
+    const choiceBlocks = this.createChoiceBlocks(
+      checkboxId,
+      submitId,
+      `Choose who to assassinate`,
+      killablePlayers.map((p, idx) => ({ text: M.formatAtUser(p), value: `${idx}` })),
+      "⚔️ Assassinate"
+    );
+
+    // Send announcement to all players (assassin gets interactive blocks)
+    await this.sendOrUpdateActionMessagePerPlayer(
+      (player) => player.playerId === assassin.playerId
+        ? [...announcementBlocks, ...choiceBlocks]
+        : announcementBlocks,
+      (player) => `${M.formatAtUser(assassin)} is the ASSASSIN. They can now try to kill MERLIN.`
+    );
+
+    // Update the registered action with message timestamp and blocks
+    const assassinMessageTs = this.actionMessageTimestamps.get(assassin.playerId);
+    if (assassinMessageTs) {
+      this.gameUx.updateChoiceActionsContext(
+        submitId,
+        assassinMessageTs,
+        [...announcementBlocks, ...choiceBlocks]
+      );
+    }
+
+    // Wait for the assassin's choice
+    const idx = await promise;
     const accused = killablePlayers[idx[0]];
+
+    // Brief pause for dramatic effect
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Result announcement
     const resultBlocks = MessageBlockBuilder.createAssassinationResultBlocks(
