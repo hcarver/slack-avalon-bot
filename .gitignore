@@ -1,3 +1,5 @@
 node_modules/
 token.txt
 connectionToken.txt
+token*.txt
+connectionToken*.txt
