@@ -9,12 +9,15 @@ export class ActionCollector<T> {
   private completed: Set<string> = new Set();
   private listenerId: string | null = null;
   private userIdToPlayerIds: Map<string, string[]> = new Map();
+  private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private pendingCallbacks: Map<string, () => void> = new Map();
 
   constructor(
     private actionService: IActionListenerService,
     private blockId: string,
     private playerIds: string[],
-    private userIdLookup?: (playerId: string) => string
+    private userIdLookup?: (playerId: string) => string,
+    private debounceMs: number = 1500
   ) {
     // Create promises for each player
     playerIds.forEach(playerId => {
@@ -72,9 +75,28 @@ export class ActionCollector<T> {
       // Mark as completed
       this.completed.add(playerId);
 
-      // Trigger UI update callback if provided
+      // Trigger debounced UI update callback if provided
       if (onUpdate && channel && messageTs) {
-        onUpdate(channel, messageTs, playerId);
+        const key = `${channel}-${messageTs}`;
+        
+        // Clear existing timer for this message
+        const existingTimer = this.debounceTimers.get(key);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+        
+        // Store the callback so we can execute it during flush
+        const callback = () => {
+          onUpdate(channel, messageTs, playerId);
+          this.debounceTimers.delete(key);
+          this.pendingCallbacks.delete(key);
+        };
+        this.pendingCallbacks.set(key, callback);
+        
+        // Set new debounced timer
+        const timer = setTimeout(callback, this.debounceMs);
+        
+        this.debounceTimers.set(key, timer);
       }
 
       // Resolve the promise for this player
@@ -90,6 +112,10 @@ export class ActionCollector<T> {
    */
   async waitForAll(): Promise<T[]> {
     const results = await Promise.all(this.promises.values());
+    
+    // Flush any pending debounced updates
+    this.flushPendingUpdates();
+    
     this.cleanup();
     return results;
   }
@@ -102,6 +128,10 @@ export class ActionCollector<T> {
       .map(id => this.promises.get(id))
       .filter(p => p !== undefined) as Promise<T>[];
     const results = await Promise.all(selectedPromises);
+    
+    // Flush any pending debounced updates
+    this.flushPendingUpdates();
+    
     this.cleanup();
     return results;
   }
@@ -125,6 +155,23 @@ export class ActionCollector<T> {
    */
   getPending(): string[] {
     return this.playerIds.filter(id => !this.completed.has(id));
+  }
+
+  /**
+   * Flush any pending debounced updates immediately
+   */
+  private flushPendingUpdates(): void {
+    // Clear all timers
+    this.debounceTimers.forEach((timer) => {
+      clearTimeout(timer);
+    });
+    this.debounceTimers.clear();
+    
+    // Execute all pending callbacks immediately
+    this.pendingCallbacks.forEach((callback) => {
+      callback();
+    });
+    this.pendingCallbacks.clear();
   }
 
   /**

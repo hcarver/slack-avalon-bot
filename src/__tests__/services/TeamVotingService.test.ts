@@ -186,6 +186,9 @@ describe('TeamVotingService', () => {
         }
       });
       
+      // Wait for debounce
+      await new Promise(resolve => setTimeout(resolve, 1600));
+      
       expect(mockApi.chat.update).toHaveBeenCalledTimes(5);
       
       // Complete remaining votes

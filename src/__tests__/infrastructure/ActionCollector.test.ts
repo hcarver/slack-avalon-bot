@@ -163,6 +163,9 @@ describe('ActionCollector', () => {
       
       await mockListener(actionContext);
       
+      // Wait for debounce
+      await new Promise(resolve => setTimeout(resolve, 1600));
+      
       expect(onUpdate).toHaveBeenCalledWith('ch1', '1234567.89', 'p1');
     });
 

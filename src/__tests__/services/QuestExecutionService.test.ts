@@ -300,6 +300,9 @@ describe('QuestExecutionService', () => {
         }
       });
       
+      // Wait for debounce
+      await new Promise(resolve => setTimeout(resolve, 1600));
+      
       expect(mockApi.chat.update).toHaveBeenCalledTimes(5);
       
       mockApi.chat.update.mockClear();
@@ -312,6 +315,9 @@ describe('QuestExecutionService', () => {
           message: { ts: '123.456' }
         }
       });
+      
+      // Wait for debounce
+      await new Promise(resolve => setTimeout(resolve, 1600));
       
       expect(mockApi.chat.update).toHaveBeenCalledTimes(5);
     });
