@@ -20,6 +20,7 @@
                 "channels:read",
                 "chat:write",
                 "groups:read",
+                "groups:history",
                 "im:history",
                 "im:write",
                 "mpim:read",
@@ -32,6 +33,7 @@
             "bot_events": [
                 "member_joined_channel",
                 "message.channels",
+                "message.groups",
                 "message.im"
             ]
         },
