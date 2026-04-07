@@ -11,6 +11,9 @@ export class ActionCollector<T> {
   private userIdToPlayerIds: Map<string, string[]> = new Map();
   private debounceTimers: Map<string, NodeJS.Timeout> = new Map();
   private pendingCallbacks: Map<string, () => void> = new Map();
+  private handler: ((playerId: string, actionValue: string) => T | null) | null = null;
+  private onUpdate: ((channel: string, messageTs: string, playerId: string) => void) | null = null;
+  private bulkActionMap: Map<string, string> = new Map();
 
   constructor(
     private actionService: IActionListenerService,
@@ -46,6 +49,8 @@ export class ActionCollector<T> {
     handler: (playerId: string, actionValue: string) => T | null,
     onUpdate?: (channel: string, messageTs: string, playerId: string) => void
   ): void {
+    this.handler = handler;
+    this.onUpdate = onUpdate || null;
     this.listenerId = this.actionService.addActionListener(this.blockId, async (context) => {
       const userId = context.body.user.id;
       const action = context.body.actions[0];
@@ -53,9 +58,16 @@ export class ActionCollector<T> {
       const channel = context.body.channel?.id;
       const messageTs = context.body.message?.ts;
 
+      // Handle bulk actions (e.g. dev shortcuts that resolve all pending players)
+      const bulkTarget = this.bulkActionMap.get(actionValue);
+      if (bulkTarget !== undefined) {
+        this.completeAllPending(bulkTarget, channel, messageTs);
+        return;
+      }
+
       // Find the first uncompleted playerId for this userId
       let playerId: string | null = null;
-      
+
       if (this.userIdLookup) {
         // Use the mapping to find playerIds for this userId
         const playerIdsForUser = this.userIdToPlayerIds.get(userId) || [];
@@ -77,26 +89,7 @@ export class ActionCollector<T> {
 
       // Trigger debounced UI update callback if provided
       if (onUpdate && channel && messageTs) {
-        const key = `${channel}-${messageTs}`;
-        
-        // Clear existing timer for this message
-        const existingTimer = this.debounceTimers.get(key);
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-        }
-        
-        // Store the callback so we can execute it during flush
-        const callback = () => {
-          onUpdate(channel, messageTs, playerId);
-          this.debounceTimers.delete(key);
-          this.pendingCallbacks.delete(key);
-        };
-        this.pendingCallbacks.set(key, callback);
-        
-        // Set new debounced timer
-        const timer = setTimeout(callback, this.debounceMs);
-        
-        this.debounceTimers.set(key, timer);
+        this.scheduleDebouncedUpdate(channel, messageTs, playerId, onUpdate);
       }
 
       // Resolve the promise for this player
@@ -155,6 +148,56 @@ export class ActionCollector<T> {
    */
   getPending(): string[] {
     return this.playerIds.filter(id => !this.completed.has(id));
+  }
+
+  /**
+   * Register a bulk action that, when triggered, completes all pending players
+   * with the given target action value.
+   * @param triggerAction - The action_id value of the bulk button
+   * @param targetAction - The action value to apply to each pending player
+   */
+  addBulkAction(triggerAction: string, targetAction: string): this {
+    this.bulkActionMap.set(triggerAction, targetAction);
+    return this;
+  }
+
+  private scheduleDebouncedUpdate(
+    channel: string,
+    messageTs: string,
+    playerId: string,
+    onUpdate: (channel: string, messageTs: string, playerId: string) => void
+  ): void {
+    const key = `${channel}-${messageTs}`;
+
+    const existingTimer = this.debounceTimers.get(key);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const callback = () => {
+      onUpdate(channel, messageTs, playerId);
+      this.debounceTimers.delete(key);
+      this.pendingCallbacks.delete(key);
+    };
+    this.pendingCallbacks.set(key, callback);
+
+    const timer = setTimeout(callback, this.debounceMs);
+    this.debounceTimers.set(key, timer);
+  }
+
+  private completeAllPending(actionValue: string, channel?: string, messageTs?: string): void {
+    if (!this.handler) return;
+    const pending = this.getPending();
+    for (const playerId of pending) {
+      const result = this.handler(playerId, actionValue);
+      if (result === null) continue;
+      this.completed.add(playerId);
+      const resolver = this.resolvers.get(playerId);
+      if (resolver) resolver(result);
+    }
+    if (this.onUpdate && channel && messageTs) {
+      this.scheduleDebouncedUpdate(channel, messageTs, pending[pending.length - 1], this.onUpdate);
+    }
   }
 
   /**

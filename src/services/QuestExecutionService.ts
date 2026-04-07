@@ -10,7 +10,8 @@ import { IActionListenerService } from "../interfaces";
 export class QuestExecutionService {
   constructor(
     private api: webApi.WebClient,
-    private actionService: IActionListenerService
+    private actionService: IActionListenerService,
+    private isDevelopment: boolean = false
   ) {}
 
   /**
@@ -45,7 +46,8 @@ export class QuestExecutionService {
             [],
             questProgress,
             questOrder,
-            questAssignments
+            questAssignments,
+            this.isDevelopment
           );
           await this.api.chat.update({
             channel: playerDms[p.playerId],
@@ -89,6 +91,12 @@ export class QuestExecutionService {
       (playerId) => questPlayers.find(p => p.playerId === playerId)!.userId
     );
 
+    if (this.isDevelopment) {
+      questCollector
+        .addBulkAction("dev_all_succeed", "succeed")
+        .addBulkAction("dev_all_fail", "fail");
+    }
+
     questCollector.start(
       (playerId, actionValue) => {
         const player = questPlayers.find(p => p.playerId === playerId);
@@ -112,7 +120,8 @@ export class QuestExecutionService {
             questCollector.getCompleted(),
             questProgress,
             questOrder,
-            questAssignments
+            questAssignments,
+            this.isDevelopment
           );
           this.api.chat.update({
             channel: playerDms[p.playerId],

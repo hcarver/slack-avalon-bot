@@ -229,6 +229,10 @@ export class Bot {
         players[0],
         players[0],
         players[0],
+        players[0],
+        players[0],
+        players[0],
+        players[0],
       ]
     }
 
@@ -323,7 +327,7 @@ export class Bot {
       role_names.forEach(role => this.gameConfig.specialRoles.push(role));
 
       // Create and configure game
-      let game = (this.game = new Avalon(gameUx, this.api, this.bolt, channel, players));
+      let game = (this.game = new Avalon(gameUx, this.api, this.bolt, channel, players, this.isDevelopment));
       game.configure(this.gameConfig);
 
       // Open DMs for all players

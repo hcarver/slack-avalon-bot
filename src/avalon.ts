@@ -143,12 +143,15 @@ export class Avalon {
     return assigns;
   }
 
-  constructor(gameUx: GameUILayer, api: webApi.WebClient, bolt: any, channel: any, players: UserId[]) {
+  private isDevelopment: boolean;
+
+  constructor(gameUx: GameUILayer, api: webApi.WebClient, bolt: any, channel: any, players: UserId[], isDevelopment: boolean = false) {
     this.api = api;
     this.gameUx = gameUx;
     this.bolt = bolt;
     this.channel = channel;
     this.playerIds = players;
+    this.isDevelopment = isDevelopment;
     this.config = structuredClone(Avalon.DEFAULT_CONFIG);
 
     // Initialize services
@@ -712,7 +715,7 @@ export class Avalon {
     }
 
     // Vote on the team
-    const teamVotingService = new TeamVotingService(this.api, this.actionService);
+    const teamVotingService = new TeamVotingService(this.api, this.actionService, this.isDevelopment);
     const voteResult = await teamVotingService.voteOnTeam(
       proposal,
       this.gameState.players,
@@ -769,7 +772,7 @@ export class Avalon {
 
 
   async runQuest(questPlayers: Player[], leader: Player): Promise<boolean> {
-    const questExecutionService = new QuestExecutionService(this.api, this.actionService);
+    const questExecutionService = new QuestExecutionService(this.api, this.actionService, this.isDevelopment);
 
     const { failed, succeeded } = await questExecutionService.executeQuest(
       questPlayers,

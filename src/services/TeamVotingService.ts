@@ -11,7 +11,8 @@ import { ProposalHistoryEntry } from "../domain/GameState";
 export class TeamVotingService {
   constructor(
     private api: webApi.WebClient,
-    private actionService: IActionListenerService
+    private actionService: IActionListenerService,
+    private isDevelopment: boolean = false
   ) {}
 
   /**
@@ -39,7 +40,8 @@ export class TeamVotingService {
             p,
             [],
             [],
-            questOrder
+            questOrder,
+            this.isDevelopment
           );
           await this.api.chat.update({
             channel: playerDms[p.playerId],
@@ -81,6 +83,12 @@ export class TeamVotingService {
       (playerId) => allPlayers.find(p => p.playerId === playerId)!.userId
     );
 
+    if (this.isDevelopment) {
+      voteCollector
+        .addBulkAction("dev_all_approve", "approve")
+        .addBulkAction("dev_all_reject", "reject");
+    }
+
     voteCollector.start(
       (playerId, actionValue) => {
         const player = allPlayers.find(p => p.playerId === playerId);
@@ -101,7 +109,8 @@ export class TeamVotingService {
             p,
             approveVotes,
             rejectVotes,
-            questOrder
+            questOrder,
+            this.isDevelopment
           );
           this.api.chat.update({
             channel: playerDms[p.playerId],

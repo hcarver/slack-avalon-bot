@@ -522,7 +522,8 @@ export class MessageBlockBuilder {
     viewingPlayer: Player,
     approvingPlayers: Player[],
     rejectingPlayers: Player[],
-    questOrder: string[]
+    questOrder: string[],
+    isDevelopment: boolean = false
   ): any[] {
     const M = require("./message-helpers");
     const teamNomination = `${M.formatAtUser(proposal.leader.userId)} is nominating ${M.pp(
@@ -605,33 +606,52 @@ export class MessageBlockBuilder {
 
     // Add action buttons if player hasn't voted yet
     if (!hasVoted && !allVotesIn) {
+      const elements: any[] = [
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "✅ Approve",
+            emoji: true,
+          },
+          value: "approve",
+          action_id: "approve",
+          style: "primary"
+        },
+        {
+          type: "button",
+          text: {
+            type: "plain_text",
+            text: "❌ Reject",
+            emoji: true,
+          },
+          value: "reject",
+          action_id: "reject",
+          style: "danger"
+        },
+      ];
+
+      if (isDevelopment) {
+        elements.push(
+          {
+            type: "button",
+            text: { type: "plain_text", text: "⏩ All Approve", emoji: true },
+            value: "dev_all_approve",
+            action_id: "dev_all_approve",
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "⏩ All Reject", emoji: true },
+            value: "dev_all_reject",
+            action_id: "dev_all_reject",
+          }
+        );
+      }
+
       blocks.push({
         type: "actions",
         block_id: "quest-team-vote",
-        elements: [
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "✅ Approve",
-              emoji: true,
-            },
-            value: "approve",
-            action_id: "approve",
-            style: "primary"
-          },
-          {
-            type: "button",
-            text: {
-              type: "plain_text",
-              text: "❌ Reject",
-              emoji: true,
-            },
-            value: "reject",
-            action_id: "reject",
-            style: "danger"
-          },
-        ],
+        elements,
       });
     }
 
@@ -650,7 +670,8 @@ export class MessageBlockBuilder {
     playerIdsWhoHaveQuested: string[],
     questProgress: QuestResult[],
     questOrder: string[],
-    questAssignments: QuestAssignment[]
+    questAssignments: QuestAssignment[],
+    isDevelopment: boolean = false
   ): any[] {
     const M = require("./message-helpers");
 
@@ -736,6 +757,23 @@ export class MessageBlockBuilder {
             action_id: "fail",
           }
         )
+      }
+
+      if (isDevelopment) {
+        action_buttons.push(
+          {
+            type: "button",
+            text: { type: "plain_text", text: "⏩ All Succeed", emoji: true },
+            value: "dev_all_succeed",
+            action_id: "dev_all_succeed",
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "⏩ All Fail", emoji: true },
+            value: "dev_all_fail",
+            action_id: "dev_all_fail",
+          }
+        );
       }
 
       action_blocks.push(
