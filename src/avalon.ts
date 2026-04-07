@@ -347,18 +347,95 @@ export class Avalon {
     return history;
   }
 
+  private static readonly BLOCK_TEXT_LIMIT = 3000;
+
+  /**
+   * Split history text into section blocks that stay under Slack's per-block
+   * character limit, preserving code fences. The history format is a heading
+   * line followed by a single ```...``` code block with quest sections
+   * separated by ─ divider lines. We split at those dividers, closing and
+   * reopening the code fence for each block.
+   */
+  private static splitIntoBlocks(text: string): any[] {
+    const fenceStart = text.indexOf('```\n');
+    const fenceEnd = text.lastIndexOf('```');
+    if (fenceStart === -1 || fenceEnd <= fenceStart) {
+      // No code fence — split plain text at newline boundaries
+      const blocks: any[] = [];
+      let remaining = text;
+      while (remaining.length > Avalon.BLOCK_TEXT_LIMIT) {
+        let splitAt = remaining.lastIndexOf('\n', Avalon.BLOCK_TEXT_LIMIT);
+        if (splitAt <= 0) splitAt = Avalon.BLOCK_TEXT_LIMIT;
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: remaining.substring(0, splitAt) } });
+        remaining = remaining.substring(splitAt + 1);
+      }
+      if (remaining.length > 0) {
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: remaining } });
+      }
+      return blocks;
+    }
+
+    const heading = text.substring(0, fenceStart);
+    const codeBody = text.substring(fenceStart + 4, fenceEnd);
+
+    // Split the code body at ─ divider lines (quest boundaries),
+    // keeping the divider attached to the preceding section
+    const sections = codeBody.split(/^(─+\n)/m);
+    const questChunks: string[] = [];
+    let current = '';
+    for (const part of sections) {
+      current += part;
+      if (/^─+\n$/.test(part)) {
+        questChunks.push(current);
+        current = '';
+      }
+    }
+    if (current.trim()) questChunks.push(current);
+
+    // Group chunks into blocks that stay under the limit
+    const blocks: any[] = [];
+    let blockText = '';
+
+    for (const chunk of questChunks) {
+      const wouldBe = (blocks.length === 0 ? heading : '') + '```\n' + blockText + chunk + '```';
+      if (wouldBe.length > Avalon.BLOCK_TEXT_LIMIT && blockText.length > 0) {
+        // Flush current block, stripping the trailing ─ divider line
+        const trimmed = blockText.replace(/─+\n$/, '');
+        const prefix = blocks.length === 0 ? heading : '';
+        blocks.push({ type: 'section', text: { type: 'mrkdwn', text: prefix + '```\n' + trimmed + '```' } });
+        blockText = '';
+      }
+      blockText += chunk;
+    }
+
+    if (blockText.length > 0) {
+      const prefix = blocks.length === 0 ? heading : '';
+      blocks.push({ type: 'section', text: { type: 'mrkdwn', text: prefix + '```\n' + blockText + '```' } });
+    }
+
+    return blocks;
+  }
+
+  private static buildHistoryMessage(historyText: string): { blocks?: any[]; text: string } {
+    const blocks = Avalon.splitIntoBlocks(historyText);
+    if (blocks.length === 1) {
+      // Fits in a single block — send as plain text (no blocks needed)
+      return { text: historyText };
+    }
+    return { blocks, text: 'Game History' };
+  }
+
   /**
    * Send initial history message to all players
    */
   private async sendHistoryToAllPlayers(): Promise<void> {
-    const historyText = this.formatGameHistory();
-    
+    const message = Avalon.buildHistoryMessage(this.formatGameHistory());
+
     await Promise.all(this.gameState.players.map(async (player) => {
       const resp = await this.api.chat.postMessage({
         channel: this.gameState.playerDms[player.playerId],
-        text: historyText,
+        ...message,
       });
-      
       if (resp.ts) {
         this.historyMessageTimestamps.set(player.playerId, resp.ts);
       }
@@ -369,15 +446,15 @@ export class Avalon {
    * Update history messages for all players
    */
   private async updateHistoryForAllPlayers(): Promise<void> {
-    const historyText = this.formatGameHistory();
-    
+    const message = Avalon.buildHistoryMessage(this.formatGameHistory());
+
     await Promise.all(this.gameState.players.map(async (player) => {
       const messageTs = this.historyMessageTimestamps.get(player.playerId);
       if (messageTs) {
         await this.api.chat.update({
           channel: this.gameState.playerDms[player.playerId],
           ts: messageTs,
-          text: historyText,
+          ...message,
         });
       }
     }));
